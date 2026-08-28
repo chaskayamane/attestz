@@ -8,10 +8,14 @@ require (
 	github.com/google/go-tpm v0.9.8
 	google.golang.org/grpc v1.82.1
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.6.2
+	google.golang.org/grpc/security/advancedtls v1.0.0
 	google.golang.org/protobuf v1.36.11
 )
 
 require (
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
+	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect

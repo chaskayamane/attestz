@@ -1,0 +1,349 @@
+// Copyright 2024 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package main
+
+import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"net"
+	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+
+	cpb "github.com/openconfig/attestz/proto/common_definitions"
+	epb "github.com/openconfig/attestz/proto/tpm_enrollz"
+	"github.com/openconfig/attestz/service/biz"
+)
+
+func generateTestKeyPem(t *testing.T) string {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	der, err := x509.MarshalPKIXPublicKey(&key.PublicKey)
+	if err != nil {
+		t.Fatalf("failed to marshal key: %v", err)
+	}
+	block := pem.EncodeToMemory(&pem.Block{
+		Type:  "PUBLIC KEY",
+		Bytes: der,
+	})
+	return string(block)
+}
+
+func TestOwnerCA(t *testing.T) {
+	ca, err := newOwnerCA("owner_ca_cert.pem", "owner_ca_key.pem")
+	if err != nil {
+		t.Fatalf("newOwnerCA() returned unexpected error: %v", err)
+	}
+
+	pubPem := generateTestKeyPem(t)
+	cardID := &cpb.ControlCardVendorId{
+		ControlCardSerial:   "test-card-serial",
+		ChassisSerialNumber: "test-chassis-serial",
+	}
+
+	ctx := context.Background()
+
+	// Test IssueOwnerIakCert
+	iakResp, err := ca.IssueOwnerIakCert(ctx, &biz.IssueOwnerIakCertReq{
+		CardID:    cardID,
+		IakPubPem: pubPem,
+	})
+	if err != nil {
+		t.Fatalf("IssueOwnerIakCert() failed: %v", err)
+	}
+	if iakResp.OwnerIakCertPem == "" {
+		t.Errorf("IssueOwnerIakCert() returned empty cert PEM")
+	}
+
+	// Test IssueOwnerIDevIDCert
+	idevidResp, err := ca.IssueOwnerIDevIDCert(ctx, &biz.IssueOwnerIDevIDCertReq{
+		CardID:       cardID,
+		IDevIDPubPem: pubPem,
+	})
+	if err != nil {
+		t.Fatalf("IssueOwnerIDevIDCert() failed: %v", err)
+	}
+	if idevidResp.OwnerIDevIDCertPem == "" {
+		t.Errorf("IssueOwnerIDevIDCert() returned empty cert PEM")
+	}
+
+	// Test IssueAikCert
+	aikResp, err := ca.IssueAikCert(ctx, &biz.IssueAikCertReq{
+		CardID:    cardID,
+		AikPubPem: pubPem,
+	})
+	if err != nil {
+		t.Fatalf("IssueAikCert() failed: %v", err)
+	}
+	if aikResp.AikCertPem == "" {
+		t.Errorf("IssueAikCert() returned empty cert PEM")
+	}
+
+	// Test issueClientTLSCert
+	tlsCert, err := ca.issueClientTLSCert()
+	if err != nil {
+		t.Fatalf("issueClientTLSCert() failed: %v", err)
+	}
+	if len(tlsCert.Certificate) == 0 {
+		t.Errorf("issueClientTLSCert() returned empty certificate chain")
+	}
+}
+
+func TestNewOwnerCAErrors(t *testing.T) {
+	if _, err := newOwnerCA("nonexistent_cert.pem", "owner_ca_key.pem"); err == nil {
+		t.Errorf("newOwnerCA() with nonexistent cert should fail, got nil")
+	}
+	if _, err := newOwnerCA("owner_ca_cert.pem", "nonexistent_key.pem"); err == nil {
+		t.Errorf("newOwnerCA() with nonexistent key should fail, got nil")
+	}
+}
+
+func TestParsePrivateKey(t *testing.T) {
+	// 1. SEC 1 EC Private Key
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate EC key: %v", err)
+	}
+	sec1Der, err := x509.MarshalECPrivateKey(ecKey)
+	if err != nil {
+		t.Fatalf("failed to marshal SEC1 EC key: %v", err)
+	}
+	if parsedKey, err := parsePrivateKey(sec1Der); err != nil {
+		t.Errorf("parsePrivateKey(sec1Der) failed: %v", err)
+	} else if _, ok := parsedKey.(*ecdsa.PrivateKey); !ok {
+		t.Errorf("parsedKey type = %T, want *ecdsa.PrivateKey", parsedKey)
+	}
+
+	// 2. PKCS#8 EC Private Key
+	pkcs8ECDer, err := x509.MarshalPKCS8PrivateKey(ecKey)
+	if err != nil {
+		t.Fatalf("failed to marshal PKCS#8 EC key: %v", err)
+	}
+	if parsedKey, err := parsePrivateKey(pkcs8ECDer); err != nil {
+		t.Errorf("parsePrivateKey(pkcs8ECDer) failed: %v", err)
+	} else if _, ok := parsedKey.(*ecdsa.PrivateKey); !ok {
+		t.Errorf("parsedKey type = %T, want *ecdsa.PrivateKey", parsedKey)
+	}
+
+	// 3. PKCS#1 RSA Private Key
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("failed to generate RSA key: %v", err)
+	}
+	pkcs1Der := x509.MarshalPKCS1PrivateKey(rsaKey)
+	if parsedKey, err := parsePrivateKey(pkcs1Der); err != nil {
+		t.Errorf("parsePrivateKey(pkcs1Der) failed: %v", err)
+	} else if _, ok := parsedKey.(*rsa.PrivateKey); !ok {
+		t.Errorf("parsedKey type = %T, want *rsa.PrivateKey", parsedKey)
+	}
+
+	// 4. PKCS#8 RSA Private Key
+	pkcs8RSADer, err := x509.MarshalPKCS8PrivateKey(rsaKey)
+	if err != nil {
+		t.Fatalf("failed to marshal PKCS#8 RSA key: %v", err)
+	}
+	if parsedKey, err := parsePrivateKey(pkcs8RSADer); err != nil {
+		t.Errorf("parsePrivateKey(pkcs8RSADer) failed: %v", err)
+	} else if _, ok := parsedKey.(*rsa.PrivateKey); !ok {
+		t.Errorf("parsedKey type = %T, want *rsa.PrivateKey", parsedKey)
+	}
+
+	// 5. PKCS#8 Ed25519 Private Key
+	_, edKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate Ed25519 key: %v", err)
+	}
+	pkcs8EdDer, err := x509.MarshalPKCS8PrivateKey(edKey)
+	if err != nil {
+		t.Fatalf("failed to marshal PKCS#8 Ed25519 key: %v", err)
+	}
+	if parsedKey, err := parsePrivateKey(pkcs8EdDer); err != nil {
+		t.Errorf("parsePrivateKey(pkcs8EdDer) failed: %v", err)
+	} else if _, ok := parsedKey.(ed25519.PrivateKey); !ok {
+		t.Errorf("parsedKey type = %T, want ed25519.PrivateKey", parsedKey)
+	}
+
+	// 6. Invalid DER
+	if _, err := parsePrivateKey([]byte("invalid DER bytes")); err == nil {
+		t.Errorf("parsePrivateKey(invalid) expected error, got nil")
+	}
+}
+
+type mockDeviceServer struct {
+	epb.UnimplementedTpmEnrollzServiceServer
+
+	getIakCertResp *epb.GetIakCertResponse
+	rotateOIakResp *epb.RotateOIakCertResponse
+	rotateOIakReq  *epb.RotateOIakCertRequest
+	vendorIDResp   *epb.GetControlCardVendorIDResponse
+	challengeResp  *epb.ChallengeResponse
+	idevidCsrResp  *epb.GetIdevidCsrResponse
+}
+
+func (m *mockDeviceServer) GetIakCert(_ context.Context, _ *epb.GetIakCertRequest) (*epb.GetIakCertResponse, error) {
+	return m.getIakCertResp, nil
+}
+
+func (m *mockDeviceServer) RotateOIakCert(_ context.Context, req *epb.RotateOIakCertRequest) (*epb.RotateOIakCertResponse, error) {
+	m.rotateOIakReq = req
+	return m.rotateOIakResp, nil
+}
+
+func (m *mockDeviceServer) GetControlCardVendorID(_ context.Context, _ *epb.GetControlCardVendorIDRequest) (*epb.GetControlCardVendorIDResponse, error) {
+	return m.vendorIDResp, nil
+}
+
+func (m *mockDeviceServer) Challenge(_ context.Context, _ *epb.ChallengeRequest) (*epb.ChallengeResponse, error) {
+	return m.challengeResp, nil
+}
+
+func (m *mockDeviceServer) GetIdevidCsr(_ context.Context, _ *epb.GetIdevidCsrRequest) (*epb.GetIdevidCsrResponse, error) {
+	return m.idevidCsrResp, nil
+}
+
+func TestDeviceClient(t *testing.T) {
+	mockServer := &mockDeviceServer{
+		getIakCertResp: &epb.GetIakCertResponse{
+			ControlCardId: &cpb.ControlCardVendorId{ControlCardSerial: "test-serial"},
+		},
+		rotateOIakResp: &epb.RotateOIakCertResponse{},
+		vendorIDResp: &epb.GetControlCardVendorIDResponse{
+			ControlCardId: &cpb.ControlCardVendorId{ControlCardSerial: "test-serial"},
+		},
+		challengeResp: &epb.ChallengeResponse{},
+		idevidCsrResp: &epb.GetIdevidCsrResponse{},
+	}
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to listen: %v", err)
+	}
+	defer lis.Close()
+
+	grpcServer := grpc.NewServer()
+	epb.RegisterTpmEnrollzServiceServer(grpcServer, mockServer)
+	go grpcServer.Serve(lis)
+	defer grpcServer.Stop()
+
+	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := &deviceClient{client: epb.NewTpmEnrollzServiceClient(conn)}
+	ctx := context.Background()
+
+	// Verify GetIakCert
+	iakResp, err := client.GetIakCert(ctx, &epb.GetIakCertRequest{})
+	if err != nil {
+		t.Errorf("GetIakCert() failed: %v", err)
+	}
+	if iakResp.GetControlCardId().GetControlCardSerial() != "test-serial" {
+		t.Errorf("GetControlCardSerial() = %q, want %q", iakResp.GetControlCardId().GetControlCardSerial(), "test-serial")
+	}
+
+	// Verify RotateOIakCert with deprecated fields
+	deprecatedReq := &epb.RotateOIakCertRequest{
+		ControlCardSelection: &cpb.ControlCardSelection{
+			ControlCardId: &cpb.ControlCardSelection_Role{Role: cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE},
+		},
+		OiakCert:     "test-oiak-cert",
+		OidevidCert:  "test-oidevid-cert",
+		SslProfileId: "test-profile",
+	}
+	rotateResp, err := client.RotateOIakCert(ctx, deprecatedReq)
+	if err != nil {
+		t.Errorf("RotateOIakCert() failed: %v", err)
+	}
+	if rotateResp == nil {
+		t.Errorf("RotateOIakCert() returned nil response")
+	}
+	if gotUpdates := mockServer.rotateOIakReq.GetUpdates(); len(gotUpdates) != 1 {
+		t.Errorf("RotateOIakCert() got %d updates, want 1", len(gotUpdates))
+	} else {
+		gotUpdate := gotUpdates[0]
+		if gotUpdate.GetOiakCert() != "test-oiak-cert" {
+			t.Errorf("GetOiakCert() = %q, want %q", gotUpdate.GetOiakCert(), "test-oiak-cert")
+		}
+		if gotUpdate.GetOidevidCert() != "test-oidevid-cert" {
+			t.Errorf("GetOidevidCert() = %q, want %q", gotUpdate.GetOidevidCert(), "test-oidevid-cert")
+		}
+		if gotRole := gotUpdate.GetControlCardSelection().GetRole(); gotRole != cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE {
+			t.Errorf("GetRole() = %v, want %v", gotRole, cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE)
+		}
+	}
+
+	// Verify RotateOIakCert with updates already set
+	updatesReq := &epb.RotateOIakCertRequest{
+		Updates: []*epb.ControlCardCertUpdate{
+			{
+				ControlCardSelection: &cpb.ControlCardSelection{
+					ControlCardId: &cpb.ControlCardSelection_Role{Role: cpb.ControlCardRole_CONTROL_CARD_ROLE_STANDBY},
+				},
+				OiakCert: "standby-oiak-cert",
+			},
+		},
+	}
+	rotateResp2, err := client.RotateOIakCert(ctx, updatesReq)
+	if err != nil {
+		t.Errorf("RotateOIakCert() with updates failed: %v", err)
+	}
+	if rotateResp2 == nil {
+		t.Errorf("RotateOIakCert() returned nil response")
+	}
+	if gotUpdates := mockServer.rotateOIakReq.GetUpdates(); len(gotUpdates) != 1 {
+		t.Errorf("RotateOIakCert() got %d updates, want 1", len(gotUpdates))
+	} else if gotUpdates[0].GetOiakCert() != "standby-oiak-cert" {
+		t.Errorf("GetOiakCert() = %q, want %q", gotUpdates[0].GetOiakCert(), "standby-oiak-cert")
+	}
+
+	// Verify GetControlCardVendorID
+	vendorResp, err := client.GetControlCardVendorID(ctx, &epb.GetControlCardVendorIDRequest{})
+	if err != nil {
+		t.Errorf("GetControlCardVendorID() failed: %v", err)
+	}
+	if vendorResp.GetControlCardId().GetControlCardSerial() != "test-serial" {
+		t.Errorf("GetControlCardVendorID() returned wrong serial: %v", vendorResp)
+	}
+
+	// Verify Challenge
+	challengeResp, err := client.Challenge(ctx, &epb.ChallengeRequest{})
+	if err != nil {
+		t.Errorf("Challenge() failed: %v", err)
+	}
+	if challengeResp == nil {
+		t.Errorf("Challenge() returned nil response")
+	}
+
+	// Verify GetIdevidCsr
+	csrResp, err := client.GetIdevidCsr(ctx, &epb.GetIdevidCsrRequest{})
+	if err != nil {
+		t.Errorf("GetIdevidCsr() failed: %v", err)
+	}
+	if csrResp == nil {
+		t.Errorf("GetIdevidCsr() returned nil response")
+	}
+}
