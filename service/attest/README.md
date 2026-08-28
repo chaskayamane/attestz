@@ -1,0 +1,96 @@
+# Attestz Client Service
+
+This package provides a Go client binary that invokes the `TpmAttestzService.Attest` gRPC method on a network device or emulator.
+
+## Request Details
+
+The client issues an `AttestRequest` configured as follows:
+
+```text
+AttestRequest{
+    control_card_selection: ControlCardSelection{
+        control_card_id: ControlCardSelection_Role{
+            Role: CONTROL_CARD_ROLE_ACTIVE
+        }
+    },
+    nonce: <32_byte_random>,
+    hash_algo: TPM_2_0_HASH_ALGO_SHA256,
+    pcr_indices: [0, 4, 7]
+}
+```
+
+- **Control Card Selection**: Active control card (`CONTROL_CARD_ROLE_ACTIVE`).
+- **Nonce**: 32 cryptographically secure random bytes generated per request via `crypto/rand`.
+- **Hash Algorithm**: TPM 2.0 SHA256 bank (`TPM_2_0_HASH_ALGO_SHA256`).
+- **PCR Indices**: PCRs `[0, 4, 7]`.
+
+---
+
+## Configuration Flags
+
+The binary accepts the following flags:
+
+| Flag | Type | Default | Description |
+|------|------|---------|-------------|
+| `-addr` | string | `localhost:50051` | Address (`host:port`) of the `TpmAttestzService` gRPC server. |
+| `-insecure` | bool | `true` | Use insecure transport credentials (disable TLS). Set to `false` for TLS. |
+| `-alsologtostderr` | bool | `false` | Log output to stderr in addition to log files. |
+| `-v` | int | `0` | Log verbosity level for glog. |
+
+---
+
+## Building and Running with Bazel
+
+### Run directly with `bazel run`
+
+```bash
+bazel run //service/attest:attest -- -addr=localhost:50051 -alsologtostderr
+```
+
+### Build the binary
+
+```bash
+bazel build //service/attest:attest
+```
+
+The compiled binary will be located at:
+```bash
+./bazel-bin/service/attest/attest_/attest -addr=localhost:50051 -alsologtostderr
+```
+
+### Run unit tests
+
+```bash
+bazel test //service/attest:attest_test
+```
+
+---
+
+## Running with Docker (OCI Container)
+
+The package includes OCI rules (`rules_oci`) to package and load the `attest` binary into Docker.
+
+### 1. Build and load the Docker image
+
+Build the container image and load it directly into your local Docker daemon:
+
+```bash
+bazel run //service/attest:load_image
+```
+
+This tags the image as `open-config-attest:latest`.
+
+### 2. Run the Docker container
+
+Run the container against a target gRPC server:
+
+```bash
+# Connecting to a server running on the host machine
+docker run --rm --net=host open-config-attest:latest -addr=localhost:50051 -alsologtostderr
+```
+
+Or using `host.docker.internal`:
+
+```bash
+docker run --rm open-config-attest:latest -addr=host.docker.internal:50051 -alsologtostderr
+```
