@@ -25,6 +25,7 @@ bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/
 ## End-to-End Example with Enrollz Service Emulator
 
 1. Start the device emulator and export its vendor CA certificate:
+
    ```bash
    bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/tmp/vendor_ca.pem
    ```
@@ -33,4 +34,3 @@ bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/
    ```bash
    bazel run //service/emulator:enrollz_emulator -- --alsologtostderr --vendor_ca_trust_bundle=/tmp/vendor_ca.pem
    ```
-

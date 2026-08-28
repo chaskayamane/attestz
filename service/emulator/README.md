@@ -1,10 +1,9 @@
-# Enrollz and Attestz *(Switch Owner)* Services Emulation
+# Enrollz and Attestz _(Switch Owner)_ Services Emulation
 
 The code located in this directory is intended to emulate typical Enrollz
 and Attestz Services hosted by a switch owner. These services will
 communicate with the networking devices hosting gRPC `enrollz` and
 `attestz` endpoints and drive TPM 2.0 enrollment and attestation workflows.
-
 
 ## Running
 
@@ -31,6 +30,7 @@ bazel run //service/emulator:enrollz_emulator -- \
 ## End-to-End Example with Device Emulator
 
 1. Start the device emulator and export its vendor CA certificate:
+
    ```bash
    bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/tmp/vendor_ca.pem
    ```
@@ -42,7 +42,6 @@ bazel run //service/emulator:enrollz_emulator -- \
 
 The servive/emulator folder contains an owner CA certificate and key for testing purposes.
 Since the key is public, it should not be used in production or considered to be secure.
-
 
 ## Container
 
