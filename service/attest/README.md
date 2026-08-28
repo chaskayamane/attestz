@@ -30,12 +30,12 @@ AttestRequest{
 
 The binary accepts the following flags:
 
-| Flag | Type | Default | Description |
-|------|------|---------|-------------|
-| `-addr` | string | `localhost:50051` | Address (`host:port`) of the `TpmAttestzService` gRPC server. |
-| `-insecure` | bool | `false` | Use insecure transport credentials (disable TLS). Set to `false` for TLS. |
-| `-owner_ca_cert` | string | `""` | Path to the owner CA certificate file for TLS configuration. |
-| `-owner_ca_key` | string | `""` | Path to the owner CA private key file for generating client mTLS credentials. |
+| Flag             | Type   | Default           | Description                                                                   |
+| ---------------- | ------ | ----------------- | ----------------------------------------------------------------------------- |
+| `-addr`          | string | `localhost:50051` | Address (`host:port`) of the `TpmAttestzService` gRPC server.                 |
+| `-insecure`      | bool   | `false`           | Use insecure transport credentials (disable TLS). Set to `false` for TLS.     |
+| `-owner_ca_cert` | string | `""`              | Path to the owner CA certificate file for TLS configuration.                  |
+| `-owner_ca_key`  | string | `""`              | Path to the owner CA private key file for generating client mTLS credentials. |
 
 ---
 

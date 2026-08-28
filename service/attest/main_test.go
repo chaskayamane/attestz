@@ -265,4 +265,3 @@ func TestGenerateClientCertErrors(t *testing.T) {
 		t.Error("generateClientCert with invalid key PEM succeeded, want error")
 	}
 }
-
