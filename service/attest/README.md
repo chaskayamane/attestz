@@ -1,6 +1,6 @@
-# Attestz Client Service
+# Attestz Client
 
-This package provides a Go client binary that invokes the `TpmAttestzService.Attest` gRPC method on a network device or emulator.
+This package provides a Go client binary that invokes the `TpmAttestzService.Attest` gRPC method on a network device.
 
 ## Request Details
 
@@ -33,32 +33,19 @@ The binary accepts the following flags:
 | Flag | Type | Default | Description |
 |------|------|---------|-------------|
 | `-addr` | string | `localhost:50051` | Address (`host:port`) of the `TpmAttestzService` gRPC server. |
-| `-insecure` | bool | `true` | Use insecure transport credentials (disable TLS). Set to `false` for TLS. |
-| `-alsologtostderr` | bool | `false` | Log output to stderr in addition to log files. |
-| `-v` | int | `0` | Log verbosity level for glog. |
+| `-insecure` | bool | `false` | Use insecure transport credentials (disable TLS). Set to `false` for TLS. |
+| `-owner_ca_cert` | string | `""` | Path to the owner CA certificate file for TLS configuration. |
+| `-owner_ca_key` | string | `""` | Path to the owner CA private key file for generating client mTLS credentials. |
 
 ---
 
 ## Building and Running with Bazel
 
-### Run directly with `bazel run`
-
 ```bash
-bazel run //service/attest:attest -- -addr=localhost:50051 -alsologtostderr
+bazel run //service/attest:attest -- --insecure --addr='[::]:4322'
 ```
 
-### Build the binary
-
-```bash
-bazel build //service/attest:attest
-```
-
-The compiled binary will be located at:
-```bash
-./bazel-bin/service/attest/attest_/attest -addr=localhost:50051 -alsologtostderr
-```
-
-### Run unit tests
+Unit tests can be run with:
 
 ```bash
 bazel test //service/attest:attest_test
@@ -85,12 +72,9 @@ This tags the image as `open-config-attest:latest`.
 Run the container against a target gRPC server:
 
 ```bash
-# Connecting to a server running on the host machine
-docker run --rm --net=host open-config-attest:latest -addr=localhost:50051 -alsologtostderr
-```
-
-Or using `host.docker.internal`:
-
-```bash
-docker run --rm open-config-attest:latest -addr=host.docker.internal:50051 -alsologtostderr
+docker run --rm --network=host \
+  -v ~/path/to/certs:/certs/ open-config-attest:latest \
+  --owner_ca_cert=/certs/owner_ca_cert.pem \
+  --owner_ca_key=/certs/owner_ca_key.pem \
+  --addr='[::]:4322' --alsologtostderr
 ```

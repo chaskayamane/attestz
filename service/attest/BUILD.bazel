@@ -12,9 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("@aspect_bazel_lib//lib:tar.bzl", "tar")
+load("@bazel_lib//lib:testing.bzl", "assert_archive_contains")
 load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@tar.bzl", "mutate", "tar")
 
 go_library(
     name = "attest_lib",
@@ -55,24 +56,27 @@ go_test(
 )
 
 tar(
-    name = "app_layer",
+    name = "attest_layer",
     srcs = [":attest"],
+    out = "attest_layer.tar",
+    mutate = mutate(strip_prefix = package_name() + "/attest_"),
+)
+
+assert_archive_contains(
+    name = "test_attest_layer",
+    archive = "attest_layer.tar",
+    expected = ["attest"],
 )
 
 oci_image(
-    name = "image",
-    architecture = select({
-        "@platforms//cpu:arm64": "arm64",
-        "//conditions:default": "amd64",
-    }),
-    entrypoint = ["/service/attest/attest_/attest"],
-    os = "linux",
-    tars = [":app_layer"],
-    visibility = ["//visibility:public"],
+    name = "attest_image",
+    base = "@distroless_base",
+    entrypoint = ["/attest"],
+    tars = [":attest_layer"],
 )
 
 oci_load(
     name = "load_image",
-    image = ":image",
+    image = ":attest_image",
     repo_tags = ["open-config-attest:latest"],
 )

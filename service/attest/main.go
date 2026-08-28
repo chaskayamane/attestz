@@ -17,10 +17,20 @@ package main
 
 import (
 	"context"
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
+	"math/big"
+	"os"
+	"time"
 
 	log "github.com/golang/glog"
 	cpb "github.com/openconfig/attestz/proto/common_definitions"
@@ -33,7 +43,9 @@ import (
 
 var (
 	addr         = flag.String("addr", "localhost:50051", "Address of the TpmAttestzService gRPC server")
-	insecureConn = flag.Bool("insecure", true, "Use insecure transport credentials (without TLS)")
+	insecureConn = flag.Bool("insecure", false, "Use insecure transport credentials (without TLS)")
+	ownerCACert  = flag.String("owner_ca_cert", "", "Path to the owner CA certificate file")
+	ownerCAKey   = flag.String("owner_ca_key", "", "Path to the owner CA private key file")
 )
 
 // createAttestRequest constructs an AttestRequest for the active control card
@@ -64,6 +76,82 @@ func attest(ctx context.Context, client apb.TpmAttestzServiceClient) (*apb.Attes
 	return client.Attest(ctx, req)
 }
 
+func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
+	if key, err := x509.ParsePKCS8PrivateKey(der); err == nil {
+		return key, nil
+	}
+	if key, err := x509.ParsePKCS1PrivateKey(der); err == nil {
+		return key, nil
+	}
+	if key, err := x509.ParseECPrivateKey(der); err == nil {
+		return key, nil
+	}
+	return nil, errors.New("failed to parse private key (tried PKCS8, PKCS1, EC)")
+}
+
+// generateClientCert generates an ephemeral client key pair and issues a certificate signed by the CA.
+func generateClientCert(caCertPEM, caKeyPEM []byte) (tls.Certificate, error) {
+	var caCertBlock *pem.Block
+	for rest := caCertPEM; len(rest) > 0; {
+		var block *pem.Block
+		block, rest = pem.Decode(rest)
+		if block == nil {
+			break
+		}
+		if block.Type == "CERTIFICATE" {
+			caCertBlock = block
+			break
+		}
+	}
+	if caCertBlock == nil {
+		return tls.Certificate{}, errors.New("failed to find CERTIFICATE in CA cert PEM")
+	}
+	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to parse CA cert: %w", err)
+	}
+
+	caKeyBlock, _ := pem.Decode(caKeyPEM)
+	if caKeyBlock == nil {
+		return tls.Certificate{}, errors.New("failed to decode CA key PEM")
+	}
+	caKey, err := parsePrivateKey(caKeyBlock.Bytes)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to parse CA key: %w", err)
+	}
+
+	clientKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate client key: %w", err)
+	}
+
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to generate serial number: %w", err)
+	}
+
+	template := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			CommonName: "attestz-client",
+		},
+		NotBefore:   time.Now().Add(-1 * time.Hour),
+		NotAfter:    time.Now().Add(24 * time.Hour),
+		KeyUsage:    x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &clientKey.PublicKey, caKey)
+	if err != nil {
+		return tls.Certificate{}, fmt.Errorf("failed to create client certificate: %w", err)
+	}
+
+	return tls.Certificate{
+		Certificate: [][]byte{certDER},
+		PrivateKey:  clientKey,
+	}, nil
+}
+
 func main() {
 	flag.Parse()
 	ctx := context.Background()
@@ -71,8 +159,30 @@ func main() {
 	var transportOpt grpc.DialOption
 	if *insecureConn {
 		transportOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
+	} else if *ownerCACert != "" && *ownerCAKey != "" {
+		caCert, err := os.ReadFile(*ownerCACert)
+		if err != nil {
+			log.Exitf("Failed to read owner CA cert from %s: %v", *ownerCACert, err)
+		}
+		certPool := x509.NewCertPool()
+		if !certPool.AppendCertsFromPEM(caCert) {
+			log.Exitf("Failed to parse owner CA cert from %s", *ownerCACert)
+		}
+		caKey, err := os.ReadFile(*ownerCAKey)
+		if err != nil {
+			log.Exitf("Failed to read owner CA key from %s: %v", *ownerCAKey, err)
+		}
+		clientCert, err := generateClientCert(caCert, caKey)
+		if err != nil {
+			log.Exitf("Failed to generate client certificate: %v", err)
+		}
+		transportOpt = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
+			RootCAs:            certPool,
+			InsecureSkipVerify: true,
+			Certificates:       []tls.Certificate{clientCert},
+		}))
 	} else {
-		transportOpt = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{}))
+		log.Exitf("No transport credentials specified. Use --insecure=true or --owner_ca_cert")
 	}
 
 	conn, err := grpc.NewClient(*addr, transportOpt)
