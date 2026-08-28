@@ -370,10 +370,32 @@ func (u *DefaultTPM20Utils) VerifyHMAC(message []byte, signature []byte, hmacSen
 	return nil
 }
 
+// expectedPolicySecretSHA256 and expectedPolicySecretSHA384 are the expected digests of the AuthPolicy for the IAK.
+// These specific policy digests correspond to TPM2_PolicySecret(TPM_RH_ENDORSEMENT) (often referred to as PolicyA in TCG EK Credential Profile).
+var (
+	expectedPolicySecretSHA256 = []byte{
+		0x83, 0x71, 0x97, 0x67, 0x44, 0x84, 0xB3, 0xF8,
+		0x1A, 0x90, 0xCC, 0x8D, 0x46, 0xA5, 0xD7, 0x24,
+		0xFD, 0x52, 0xD7, 0x6E, 0x06, 0x52, 0x0B, 0x64,
+		0xF2, 0xA1, 0xDA, 0x1B, 0x33, 0x14, 0x69, 0xAA,
+	}
+	expectedPolicySecretSHA384 = []byte{
+		0x12, 0x9D, 0x94, 0xEB, 0xF8, 0x45, 0x56, 0x65,
+		0x2C, 0x6E, 0xEF, 0x43, 0xBB, 0xB7, 0x57, 0x51,
+		0x2A, 0xC8, 0x7E, 0x52, 0xBE, 0x7B, 0x34, 0x9C,
+		0xA6, 0xCE, 0x4D, 0x82, 0x6F, 0x74, 0x9F, 0xCF,
+		0x67, 0x2F, 0x51, 0x71, 0x6C, 0x5C, 0xBB, 0x60,
+		0x5F, 0x31, 0x3B, 0xF3, 0x45, 0xAA, 0xB3, 0x12,
+	}
+)
+
 // VerifyCertifyInfo verifies the certify info (TPM2B_ATTEST) and the nested TPMS_CERTIFY_INFO structure.
 func (u *DefaultTPM20Utils) VerifyCertifyInfo(certifyInfoAttest *tpm20.TPMSAttest, certifiedKey *tpm20.TPMTPublic) error {
 	if certifyInfoAttest == nil {
-		return fmt.Errorf("certifyInfoAttest cannot be nil")
+		return fmt.Errorf("%w: certifyInfoAttest cannot be nil", ErrInputNil)
+	}
+	if certifiedKey == nil {
+		return fmt.Errorf("%w: certifiedKey cannot be nil", ErrInputNil)
 	}
 	if certifyInfoAttest.Magic != tpm20.TPMGeneratedValue {
 		return fmt.Errorf("%w: unexpected TPM2B_ATTEST magic %0x", ErrInvalidCertifyInfo, certifyInfoAttest.Magic)
@@ -405,7 +427,10 @@ func (u *DefaultTPM20Utils) VerifyCertifyInfo(certifyInfoAttest *tpm20.TPMSAttes
 	return nil
 }
 
-func verifyTPMTPublicAttributes(pubKey tpm20.TPMTPublic, expectedObjAttributes tpm20.TPMAObject) error {
+func verifyTPMTPublicAttributes(pubKey *tpm20.TPMTPublic, expectedObjAttributes tpm20.TPMAObject) error {
+	if pubKey == nil {
+		return fmt.Errorf("%w: pubKey cannot be nil", ErrInputNil)
+	}
 	if pubKey.ObjectAttributes.FixedTPM != expectedObjAttributes.FixedTPM {
 		return fmt.Errorf("%w: FixedTPM mismatch, got %v, want %v", ErrInvalidPubKeyAttributes, pubKey.ObjectAttributes.FixedTPM, expectedObjAttributes.FixedTPM)
 	}
@@ -443,6 +468,9 @@ func (u *DefaultTPM20Utils) VerifyIAKAttributes(iakPub []byte) (*tpm20.TPMTPubli
 	if err != nil {
 		return nil, fmt.Errorf("failed to get IAK public key contents: %w", err)
 	}
+	if iakPubKey == nil {
+		return nil, fmt.Errorf("%w: iakPubKey contents is nil", ErrInputNil)
+	}
 
 	// expectedObjAttributes defines the required properties for a TPM-based Attestation Key (IAK).
 	// These attributes ensure the key is a restricted signing key, as specified in
@@ -458,12 +486,56 @@ func (u *DefaultTPM20Utils) VerifyIAKAttributes(iakPub []byte) (*tpm20.TPMTPubli
 		AdminWithPolicy:     true,
 	}
 
-	if err := verifyTPMTPublicAttributes(*iakPubKey, expectedObjAttributes); err != nil {
+	if err := verifyTPMTPublicAttributes(iakPubKey, expectedObjAttributes); err != nil {
 		return nil, fmt.Errorf("failed to verify IAK attributes: %w", err)
 	}
 
-	if iakPubKey.NameAlg != tpm20.TPMAlgSHA256 && iakPubKey.NameAlg != tpm20.TPMAlgSHA384 {
-		return nil, fmt.Errorf("%w: IAKPub.NameAlg (%v) must be one of TPMAlgSHA256, TPMAlgSHA384, or TPMAlgSHA512", ErrInvalidPubKeyAttributes, iakPubKey.NameAlg)
+	var expectedPolicySecret []byte
+	switch iakPubKey.Type {
+	case tpm20.TPMAlgRSA:
+		if iakPubKey.NameAlg != tpm20.TPMAlgSHA256 {
+			return nil, fmt.Errorf("%w: TPMAlgRSA IAKPub must use NameAlg TPMAlgSHA256, got %v", ErrInvalidPubKeyAttributes, iakPubKey.NameAlg)
+		}
+		rsaParams, err := iakPubKey.Parameters.RSADetail()
+		if err != nil {
+			return nil, fmt.Errorf("%w: iakPubKey.Parameters are not RSAParams: %v", ErrInvalidPubKeyAttributes, err)
+		}
+		if rsaParams.KeyBits != 2048 {
+			return nil, fmt.Errorf("%w: unexpected rsaParams.KeyBits in iakPubKey got %v, want 2048", ErrInvalidPubKeyAttributes, rsaParams.KeyBits)
+		}
+		if rsaParams.Scheme.Scheme != tpm20.TPMAlgRSASSA {
+			return nil, fmt.Errorf("%w: unexpected rsaParams.Scheme.Scheme in iakPubKey got %v, want %v", ErrInvalidPubKeyAttributes, rsaParams.Scheme.Scheme, tpm20.TPMAlgRSASSA)
+		}
+		expectedPolicySecret = expectedPolicySecretSHA256
+	case tpm20.TPMAlgECC:
+		eccParams, err := iakPubKey.Parameters.ECCDetail()
+		if err != nil {
+			return nil, fmt.Errorf("%w: iakPubKey.Parameters are not ECCParams: %v", ErrInvalidPubKeyAttributes, err)
+		}
+		if eccParams.Scheme.Scheme != tpm20.TPMAlgECDSA {
+			return nil, fmt.Errorf("%w: unexpected eccParams.Scheme.Scheme in iakPubKey got %v, want %v", ErrInvalidPubKeyAttributes, eccParams.Scheme.Scheme, tpm20.TPMAlgECDSA)
+		}
+
+		switch eccParams.CurveID {
+		case tpm20.TPMECCNistP384:
+			if iakPubKey.NameAlg != tpm20.TPMAlgSHA384 {
+				return nil, fmt.Errorf("%w: TPMAlgECC with CurveID TPMECCNistP384 must use NameAlg TPMAlgSHA384, got %v", ErrInvalidPubKeyAttributes, iakPubKey.NameAlg)
+			}
+			expectedPolicySecret = expectedPolicySecretSHA384
+		case tpm20.TPMECCNistP256:
+			if iakPubKey.NameAlg != tpm20.TPMAlgSHA256 {
+				return nil, fmt.Errorf("%w: TPMAlgECC with CurveID TPMECCNistP256 must use NameAlg TPMAlgSHA256, got %v", ErrInvalidPubKeyAttributes, iakPubKey.NameAlg)
+			}
+			expectedPolicySecret = expectedPolicySecretSHA256
+		default:
+			return nil, fmt.Errorf("%w: unexpected eccParams.CurveID in iakPubKey got %v, want %v or %v", ErrInvalidPubKeyAttributes, eccParams.CurveID, tpm20.TPMECCNistP384, tpm20.TPMECCNistP256)
+		}
+	default:
+		return nil, fmt.Errorf("%w: IAKPub.Type (%v) must be TPMAlgRSA or TPMAlgECC", ErrInvalidPubKeyAttributes, iakPubKey.Type)
+	}
+
+	if !bytes.Equal(iakPubKey.AuthPolicy.Buffer, expectedPolicySecret) {
+		return nil, fmt.Errorf("%w: AuthPolicy mismatch", ErrInvalidPubKeyAttributes)
 	}
 
 	return iakPubKey, nil
@@ -634,7 +706,7 @@ func verifyECDSA(data []byte, sig *tpm20.TPMSSignatureECC, pubKey *tpm20.TPMTPub
 	return nil
 }
 
-// VerifyIdevidAttributes verifies the IDevID attributes and make sure they match the template provided.
+// VerifyIdevidAttributes verifies the IDevID attributes and makes sure they match the template provided.
 func (u *DefaultTPM20Utils) VerifyIdevidAttributes(idevidPub *tpm20.TPMTPublic, keyTemplate epb.KeyTemplate) error {
 	if idevidPub == nil {
 		return fmt.Errorf("%w: IDevID pub cannot be nil", ErrInputNil)
@@ -651,7 +723,7 @@ func (u *DefaultTPM20Utils) VerifyIdevidAttributes(idevidPub *tpm20.TPMTPublic, 
 		UserWithAuth:        true,
 		AdminWithPolicy:     true,
 	}
-	if err := verifyTPMTPublicAttributes(*idevidPub, expAttributes); err != nil {
+	if err := verifyTPMTPublicAttributes(idevidPub, expAttributes); err != nil {
 		return fmt.Errorf("failed to verify IDevID attributes: %w", err)
 	}
 	switch keyTemplate {
