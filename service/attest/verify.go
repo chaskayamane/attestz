@@ -31,7 +31,6 @@ import (
 
 // VerifyRemoteAttestation fully validates evidence. Requires standard root/intermediate CA pools.
 func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]byte, requestedIndices []int, expectedNonce []byte, trustedRoots *x509.CertPool, intermediates *x509.CertPool) error {
-
 	// 1. Parse and cryptographically verify the OIAK against the Root/Intermediate CA chain.
 	block, _ := pem.Decode([]byte(resp.GetAttestationCert().GetOiakCert()))
 	if block == nil {
