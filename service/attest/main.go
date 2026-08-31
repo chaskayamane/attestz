@@ -24,12 +24,16 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
+	"sort"
+	"strconv"
 	"time"
 
 	log "github.com/golang/glog"
@@ -42,15 +46,48 @@ import (
 )
 
 var (
-	addr         = flag.String("addr", "localhost:50051", "Address of the TpmAttestzService gRPC server")
-	insecureConn = flag.Bool("insecure", false, "Use insecure transport credentials (without TLS)")
-	ownerCACert  = flag.String("owner_ca_cert", "", "Path to the owner CA certificate file")
-	ownerCAKey   = flag.String("owner_ca_key", "", "Path to the owner CA private key file")
+	addr             = flag.String("addr", "localhost:50051", "Address of the TpmAttestzService gRPC server")
+	insecureConn     = flag.Bool("insecure", false, "Use insecure transport credentials (without TLS)")
+	ownerCACert      = flag.String("owner_ca_cert", "", "Path to the owner CA certificate file")
+	ownerCAKey       = flag.String("owner_ca_key", "", "Path to the owner CA private key file")
+	expectedPCRsFlag = flag.String("expected_pcrs", "", `JSON string mapping PCR index to hex digest (e.g. '{"0":"a1b2...","4":"c3d4..."}')`)
 )
 
+// parseExpectedPCRs parses a JSON string mapping PCR index to hex digest.
+func parseExpectedPCRs(jsonStr string) (map[int][]byte, error) {
+	if jsonStr == "" {
+		return nil, errors.New("expected_pcrs flag is required")
+	}
+	var rawMap map[string]string
+	if err := json.Unmarshal([]byte(jsonStr), &rawMap); err != nil {
+		return nil, fmt.Errorf("failed to parse expected_pcrs JSON: %w", err)
+	}
+	if len(rawMap) == 0 {
+		return nil, errors.New("expected_pcrs cannot be empty")
+	}
+	pcrs := make(map[int][]byte, len(rawMap))
+	for k, v := range rawMap {
+		idx, err := strconv.Atoi(k)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PCR index %q: %w", k, err)
+		}
+		val, err := hex.DecodeString(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid hex value for PCR %d: %w", idx, err)
+		}
+		pcrs[idx] = val
+	}
+	return pcrs, nil
+}
+
 // createAttestRequest constructs an AttestRequest for the active control card
-// with a 32-byte random nonce, SHA256 hash algorithm, and PCR indices 0, 4, 7.
-func createAttestRequest() (*apb.AttestRequest, error) {
+// with a 32-byte random nonce, SHA256 hash algorithm, and specified PCR indices.
+// If no indices are provided, it defaults to [0, 4, 7].
+func createAttestRequest(pcrIndices ...int32) (*apb.AttestRequest, error) {
+	indices := pcrIndices
+	if len(indices) == 0 {
+		indices = []int32{0, 4, 7}
+	}
 	nonce := make([]byte, 32)
 	if _, err := rand.Read(nonce); err != nil {
 		return nil, fmt.Errorf("failed to generate random nonce: %w", err)
@@ -63,15 +100,22 @@ func createAttestRequest() (*apb.AttestRequest, error) {
 		},
 		Nonce:      nonce,
 		HashAlgo:   cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA256,
-		PcrIndices: []int32{0, 4, 7},
+		PcrIndices: indices,
 	}, nil
 }
 
-// attest calls the Attest RPC on the given client with the constructed request.
-func attest(ctx context.Context, client apb.TpmAttestzServiceClient) (*apb.AttestResponse, error) {
-	req, err := createAttestRequest()
-	if err != nil {
-		return nil, err
+// attest calls the Attest RPC on the given client with the request.
+// If no request is provided, createAttestRequest() is used to create a default request.
+func attest(ctx context.Context, client apb.TpmAttestzServiceClient, reqs ...*apb.AttestRequest) (*apb.AttestResponse, error) {
+	var req *apb.AttestRequest
+	if len(reqs) > 0 && reqs[0] != nil {
+		req = reqs[0]
+	} else {
+		var err error
+		req, err = createAttestRequest()
+		if err != nil {
+			return nil, err
+		}
 	}
 	return client.Attest(ctx, req)
 }
@@ -156,18 +200,37 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
-	var transportOpt grpc.DialOption
-	if *insecureConn {
-		transportOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
-	} else if *ownerCACert != "" && *ownerCAKey != "" {
-		caCert, err := os.ReadFile(*ownerCACert)
+	expectedPCRs, err := parseExpectedPCRs(*expectedPCRsFlag)
+	if err != nil {
+		log.Exitf("Invalid --expected_pcrs: %v", err)
+	}
+
+	var requestedIndices []int
+	var pcrIndices []int32
+	for idx := range expectedPCRs {
+		requestedIndices = append(requestedIndices, idx)
+		pcrIndices = append(pcrIndices, int32(idx))
+	}
+	sort.Ints(requestedIndices)
+	sort.Slice(pcrIndices, func(i, j int) bool { return pcrIndices[i] < pcrIndices[j] })
+
+	var trustedRoots *x509.CertPool
+	var caCert []byte
+	if *ownerCACert != "" {
+		caCert, err = os.ReadFile(*ownerCACert)
 		if err != nil {
 			log.Exitf("Failed to read owner CA cert from %s: %v", *ownerCACert, err)
 		}
-		certPool := x509.NewCertPool()
-		if !certPool.AppendCertsFromPEM(caCert) {
+		trustedRoots = x509.NewCertPool()
+		if !trustedRoots.AppendCertsFromPEM(caCert) {
 			log.Exitf("Failed to parse owner CA cert from %s", *ownerCACert)
 		}
+	}
+
+	var transportOpt grpc.DialOption
+	if *insecureConn {
+		transportOpt = grpc.WithTransportCredentials(insecure.NewCredentials())
+	} else if caCert != nil && *ownerCAKey != "" {
 		caKey, err := os.ReadFile(*ownerCAKey)
 		if err != nil {
 			log.Exitf("Failed to read owner CA key from %s: %v", *ownerCAKey, err)
@@ -177,7 +240,7 @@ func main() {
 			log.Exitf("Failed to generate client certificate: %v", err)
 		}
 		transportOpt = grpc.WithTransportCredentials(credentials.NewTLS(&tls.Config{
-			RootCAs:            certPool,
+			RootCAs:            trustedRoots,
 			InsecureSkipVerify: true,
 			Certificates:       []tls.Certificate{clientCert},
 		}))
@@ -191,11 +254,21 @@ func main() {
 	}
 	defer conn.Close()
 
+	req, err := createAttestRequest(pcrIndices...)
+	if err != nil {
+		log.Exitf("Failed to create attest request: %v", err)
+	}
+
 	client := apb.NewTpmAttestzServiceClient(conn)
-	resp, err := attest(ctx, client)
+	resp, err := attest(ctx, client, req)
 	if err != nil {
 		log.Exitf("Attest RPC failed: %v", err)
 	}
 
 	log.Infof("AttestResponse:\n%s", prototext.Format(resp))
+
+	if err := VerifyRemoteAttestation(resp, expectedPCRs, requestedIndices, req.GetNonce(), trustedRoots, nil); err != nil {
+		log.Exitf("Remote attestation verification failed: %v", err)
+	}
+	log.Infof("Remote attestation verification succeeded")
 }

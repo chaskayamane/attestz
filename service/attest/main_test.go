@@ -265,3 +265,71 @@ func TestGenerateClientCertErrors(t *testing.T) {
 		t.Error("generateClientCert with invalid key PEM succeeded, want error")
 	}
 }
+
+func TestParseExpectedPCRs(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		want    map[int][]byte
+		wantErr bool
+	}{
+		{
+			name:  "valid",
+			input: `{"0":"010203","4":"040506"}`,
+			want: map[int][]byte{
+				0: {0x01, 0x02, 0x03},
+				4: {0x04, 0x05, 0x06},
+			},
+		},
+		{
+			name:    "empty string",
+			input:   "",
+			wantErr: true,
+		},
+		{
+			name:    "empty json object",
+			input:   "{}",
+			wantErr: true,
+		},
+		{
+			name:    "invalid json",
+			input:   `not-json`,
+			wantErr: true,
+		},
+		{
+			name:    "non-numeric index",
+			input:   `{"abc":"0102"}`,
+			wantErr: true,
+		},
+		{
+			name:    "invalid hex value",
+			input:   `{"0":"not-hex"}`,
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseExpectedPCRs(tc.input)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("parseExpectedPCRs(%q) error = %v, wantErr = %v", tc.input, err, tc.wantErr)
+			}
+			if !tc.wantErr {
+				if diff := cmp.Diff(tc.want, got); diff != "" {
+					t.Errorf("parseExpectedPCRs(%q) mismatch (-want +got):\n%s", tc.input, diff)
+				}
+			}
+		})
+	}
+}
+
+func TestCreateAttestRequestCustomIndices(t *testing.T) {
+	req, err := createAttestRequest(1, 2, 3)
+	if err != nil {
+		t.Fatalf("createAttestRequest(1, 2, 3) failed: %v", err)
+	}
+	want := []int32{1, 2, 3}
+	if diff := cmp.Diff(want, req.GetPcrIndices()); diff != "" {
+		t.Errorf("PcrIndices mismatch (-want +got):\n%s", diff)
+	}
+}
