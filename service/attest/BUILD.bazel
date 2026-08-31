@@ -20,6 +20,7 @@ load("@tar.bzl", "mutate", "tar")
 go_library(
     name = "attest_lib",
     srcs = ["main.go"],
+    embed = [":verify"],
     importpath = "github.com/openconfig/attestz/service/attest",
     visibility = ["//visibility:private"],
     deps = [
@@ -52,6 +53,27 @@ go_test(
         "@org_golang_google_grpc//credentials/insecure",
         "@org_golang_google_grpc//test/bufconn",
         "@org_golang_google_protobuf//testing/protocmp",
+    ],
+)
+
+go_library(
+    name = "verify",
+    srcs = ["verify.go"],
+    importpath = "github.com/openconfig/attestz/service/attest",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//proto:tpm_attestz_go",
+        "@com_github_google_go_tpm//tpm2",
+    ],
+)
+
+go_test(
+    name = "verify_test",
+    srcs = ["verify_test.go"],
+    embed = [":verify"],
+    deps = [
+        "//proto:tpm_attestz_go",
+        "@com_github_google_go_tpm//tpm2",
     ],
 )
 
