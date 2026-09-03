@@ -40,7 +40,7 @@ bazel run //service/emulator:enrollz_emulator -- \
    bazel run //service/emulator:enrollz_emulator -- --alsologtostderr --vendor_ca_trust_bundle=/tmp/vendor_ca.pem
    ```
 
-The servive/emulator folder contains an owner CA certificate and key for testing purposes.
+The service/emulator folder contains an owner CA certificate and key for testing purposes.
 Since the key is public, it should not be used in production or considered to be secure.
 
 ## Container
