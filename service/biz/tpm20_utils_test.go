@@ -105,7 +105,7 @@ func TestVerifyTPMTPublicAttributes_Success(t *testing.T) {
 		ObjectAttributes: baseAttributes,
 	}
 
-	if err := verifyTPMTPublicAttributes(pubKeyWithBaseAttributes, baseAttributes); err != nil {
+	if err := verifyTPMTPublicAttributes(&pubKeyWithBaseAttributes, baseAttributes); err != nil {
 		t.Errorf("verifyTPMTPublicAttributes() returned an unexpected error: %v", err)
 	}
 }
@@ -210,7 +210,7 @@ func TestVerifyTPMTPublicAttributes_Failure(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := verifyTPMTPublicAttributes(tc.pubKey, tc.expected)
+			err := verifyTPMTPublicAttributes(&tc.pubKey, tc.expected)
 			if err == nil {
 				t.Error("verifyTPMTPublicAttributes() expected an error, but got nil")
 			}
@@ -228,23 +228,110 @@ func convertToTPM2BPublic(pub tpm20.TPMTPublic) []byte {
 func TestVerifyIAKAttributes_Success(t *testing.T) {
 	u := DefaultTPM20Utils{}
 
-	validIAKPub := validTPMTPublic
-	validIAKPub.ObjectAttributes = tpm20.TPMAObject{
-		FixedTPM:            true,
-		Restricted:          true,
-		SensitiveDataOrigin: true,
-		SignEncrypt:         true,
-		Decrypt:             false,
-		FixedParent:         true,
-		UserWithAuth:        true,
-		AdminWithPolicy:     true,
+	expectedPolicySecretSHA256 := []byte{
+		0x83, 0x71, 0x97, 0x67, 0x44, 0x84, 0xB3, 0xF8,
+		0x1A, 0x90, 0xCC, 0x8D, 0x46, 0xA5, 0xD7, 0x24,
+		0xFD, 0x52, 0xD7, 0x6E, 0x06, 0x52, 0x0B, 0x64,
+		0xF2, 0xA1, 0xDA, 0x1B, 0x33, 0x14, 0x69, 0xAA,
 	}
-	validIAKPub.NameAlg = tpm20.TPMAlgSHA256
-	validIAKPubBytes := convertToTPM2BPublic(validIAKPub)
+	expectedPolicySecretSHA384 := []byte{
+		0x12, 0x9D, 0x94, 0xEB, 0xF8, 0x45, 0x56, 0x65,
+		0x2C, 0x6E, 0xEF, 0x43, 0xBB, 0xB7, 0x57, 0x51,
+		0x2A, 0xC8, 0x7E, 0x52, 0xBE, 0x7B, 0x34, 0x9C,
+		0xA6, 0xCE, 0x4D, 0x82, 0x6F, 0x74, 0x9F, 0xCF,
+		0x67, 0x2F, 0x51, 0x71, 0x6C, 0x5C, 0xBB, 0x60,
+		0x5F, 0x31, 0x3B, 0xF3, 0x45, 0xAA, 0xB3, 0x12,
+	}
 
-	pubWithSHA384 := validIAKPub
-	pubWithSHA384.NameAlg = tpm20.TPMAlgSHA384
-	pubWithSHA384Bytes := convertToTPM2BPublic(pubWithSHA384)
+	validIAKPubECC := tpm20.TPMTPublic{
+		Type:    tpm20.TPMAlgECC,
+		NameAlg: tpm20.TPMAlgSHA384,
+		ObjectAttributes: tpm20.TPMAObject{
+			FixedTPM:            true,
+			Restricted:          true,
+			SensitiveDataOrigin: true,
+			SignEncrypt:         true,
+			Decrypt:             false,
+			FixedParent:         true,
+			UserWithAuth:        true,
+			AdminWithPolicy:     true,
+		},
+		AuthPolicy: tpm20.TPM2BDigest{
+			Buffer: expectedPolicySecretSHA384,
+		},
+		Parameters: tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+			Symmetric: tpm20.TPMTSymDefObject{Algorithm: tpm20.TPMAlgNull},
+			Scheme: tpm20.TPMTECCScheme{
+				Scheme: tpm20.TPMAlgECDSA,
+				Details: tpm20.NewTPMUAsymScheme(tpm20.TPMAlgECDSA, &tpm20.TPMSSigSchemeECDSA{
+					HashAlg: tpm20.TPMAlgSHA384,
+				}),
+			},
+			CurveID: tpm20.TPMECCNistP384,
+			KDF:     tpm20.TPMTKDFScheme{Scheme: tpm20.TPMAlgNull},
+		}),
+	}
+	validIAKECCBytes := convertToTPM2BPublic(validIAKPubECC)
+
+	validIAKPubECCP256 := tpm20.TPMTPublic{
+		Type:    tpm20.TPMAlgECC,
+		NameAlg: tpm20.TPMAlgSHA256,
+		ObjectAttributes: tpm20.TPMAObject{
+			FixedTPM:            true,
+			Restricted:          true,
+			SensitiveDataOrigin: true,
+			SignEncrypt:         true,
+			Decrypt:             false,
+			FixedParent:         true,
+			UserWithAuth:        true,
+			AdminWithPolicy:     true,
+		},
+		AuthPolicy: tpm20.TPM2BDigest{
+			Buffer: expectedPolicySecretSHA256,
+		},
+		Parameters: tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+			Symmetric: tpm20.TPMTSymDefObject{Algorithm: tpm20.TPMAlgNull},
+			Scheme: tpm20.TPMTECCScheme{
+				Scheme: tpm20.TPMAlgECDSA,
+				Details: tpm20.NewTPMUAsymScheme(tpm20.TPMAlgECDSA, &tpm20.TPMSSigSchemeECDSA{
+					HashAlg: tpm20.TPMAlgSHA256,
+				}),
+			},
+			CurveID: tpm20.TPMECCNistP256,
+			KDF:     tpm20.TPMTKDFScheme{Scheme: tpm20.TPMAlgNull},
+		}),
+	}
+	validIAKECCP256Bytes := convertToTPM2BPublic(validIAKPubECCP256)
+
+	validIAKPubRSA := tpm20.TPMTPublic{
+		Type:    tpm20.TPMAlgRSA,
+		NameAlg: tpm20.TPMAlgSHA256,
+		ObjectAttributes: tpm20.TPMAObject{
+			FixedTPM:            true,
+			Restricted:          true,
+			SensitiveDataOrigin: true,
+			SignEncrypt:         true,
+			Decrypt:             false,
+			FixedParent:         true,
+			UserWithAuth:        true,
+			AdminWithPolicy:     true,
+		},
+		AuthPolicy: tpm20.TPM2BDigest{
+			Buffer: expectedPolicySecretSHA256,
+		},
+		Parameters: tpm20.NewTPMUPublicParms(tpm20.TPMAlgRSA, &tpm20.TPMSRSAParms{
+			Symmetric: tpm20.TPMTSymDefObject{Algorithm: tpm20.TPMAlgNull},
+			Scheme: tpm20.TPMTRSAScheme{
+				Scheme: tpm20.TPMAlgRSASSA,
+				Details: tpm20.NewTPMUAsymScheme(tpm20.TPMAlgRSASSA, &tpm20.TPMSSigSchemeRSASSA{
+					HashAlg: tpm20.TPMAlgSHA256,
+				}),
+			},
+			KeyBits:  2048,
+			Exponent: 0,
+		}),
+	}
+	validIAKRSABytes := convertToTPM2BPublic(validIAKPubRSA)
 
 	tests := []struct {
 		name   string
@@ -252,14 +339,19 @@ func TestVerifyIAKAttributes_Success(t *testing.T) {
 		want   *tpm20.TPMTPublic
 	}{
 		{
-			name:   "Success",
-			iakPub: validIAKPubBytes,
-			want:   &validIAKPub,
+			name:   "Success ECC P-384",
+			iakPub: validIAKECCBytes,
+			want:   &validIAKPubECC,
 		},
 		{
-			name:   "Success SHA384",
-			iakPub: pubWithSHA384Bytes,
-			want:   &pubWithSHA384,
+			name:   "Success ECC P-256",
+			iakPub: validIAKECCP256Bytes,
+			want:   &validIAKPubECCP256,
+		},
+		{
+			name:   "Success RSA RSASSA",
+			iakPub: validIAKRSABytes,
+			want:   &validIAKPubRSA,
 		},
 	}
 
@@ -279,60 +371,220 @@ func TestVerifyIAKAttributes_Success(t *testing.T) {
 func TestVerifyIAKAttributes_Failure(t *testing.T) {
 	u := DefaultTPM20Utils{}
 
-	validIAKPub := validTPMTPublic
-	validIAKPub.ObjectAttributes = tpm20.TPMAObject{
-		FixedTPM:            true,
-		Restricted:          true,
-		SensitiveDataOrigin: true,
-		SignEncrypt:         true,
-		Decrypt:             false,
-		FixedParent:         true,
-		UserWithAuth:        true,
-		AdminWithPolicy:     true,
+	expectedPolicySecretSHA256 := []byte{
+		0x83, 0x71, 0x97, 0x67, 0x44, 0x84, 0xB3, 0xF8,
+		0x1A, 0x90, 0xCC, 0x8D, 0x46, 0xA5, 0xD7, 0x24,
+		0xFD, 0x52, 0xD7, 0x6E, 0x06, 0x52, 0x0B, 0x64,
+		0xF2, 0xA1, 0xDA, 0x1B, 0x33, 0x14, 0x69, 0xAA,
 	}
-	validIAKPub.NameAlg = tpm20.TPMAlgSHA256
+	expectedPolicySecretSHA384 := []byte{
+		0x12, 0x9D, 0x94, 0xEB, 0xF8, 0x45, 0x56, 0x65,
+		0x2C, 0x6E, 0xEF, 0x43, 0xBB, 0xB7, 0x57, 0x51,
+		0x2A, 0xC8, 0x7E, 0x52, 0xBE, 0x7B, 0x34, 0x9C,
+		0xA6, 0xCE, 0x4D, 0x82, 0x6F, 0x74, 0x9F, 0xCF,
+		0x67, 0x2F, 0x51, 0x71, 0x6C, 0x5C, 0xBB, 0x60,
+		0x5F, 0x31, 0x3B, 0xF3, 0x45, 0xAA, 0xB3, 0x12,
+	}
+
+	validIAKPubECC := tpm20.TPMTPublic{
+		Type:    tpm20.TPMAlgECC,
+		NameAlg: tpm20.TPMAlgSHA384,
+		ObjectAttributes: tpm20.TPMAObject{
+			FixedTPM:            true,
+			Restricted:          true,
+			SensitiveDataOrigin: true,
+			SignEncrypt:         true,
+			Decrypt:             false,
+			FixedParent:         true,
+			UserWithAuth:        true,
+			AdminWithPolicy:     true,
+		},
+		AuthPolicy: tpm20.TPM2BDigest{
+			Buffer: expectedPolicySecretSHA384,
+		},
+		Parameters: tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+			Symmetric: tpm20.TPMTSymDefObject{Algorithm: tpm20.TPMAlgNull},
+			Scheme: tpm20.TPMTECCScheme{
+				Scheme: tpm20.TPMAlgECDSA,
+				Details: tpm20.NewTPMUAsymScheme(tpm20.TPMAlgECDSA, &tpm20.TPMSSigSchemeECDSA{
+					HashAlg: tpm20.TPMAlgSHA384,
+				}),
+			},
+			CurveID: tpm20.TPMECCNistP384,
+			KDF:     tpm20.TPMTKDFScheme{Scheme: tpm20.TPMAlgNull},
+		}),
+	}
+
+	validIAKPubRSA := tpm20.TPMTPublic{
+		Type:    tpm20.TPMAlgRSA,
+		NameAlg: tpm20.TPMAlgSHA256,
+		ObjectAttributes: tpm20.TPMAObject{
+			FixedTPM:            true,
+			Restricted:          true,
+			SensitiveDataOrigin: true,
+			SignEncrypt:         true,
+			Decrypt:             false,
+			FixedParent:         true,
+			UserWithAuth:        true,
+			AdminWithPolicy:     true,
+		},
+		AuthPolicy: tpm20.TPM2BDigest{
+			Buffer: expectedPolicySecretSHA256,
+		},
+		Parameters: tpm20.NewTPMUPublicParms(tpm20.TPMAlgRSA, &tpm20.TPMSRSAParms{
+			Symmetric: tpm20.TPMTSymDefObject{Algorithm: tpm20.TPMAlgNull},
+			Scheme: tpm20.TPMTRSAScheme{
+				Scheme: tpm20.TPMAlgRSASSA,
+				Details: tpm20.NewTPMUAsymScheme(tpm20.TPMAlgRSASSA, &tpm20.TPMSSigSchemeRSASSA{
+					HashAlg: tpm20.TPMAlgSHA256,
+				}),
+			},
+			KeyBits:  2048,
+			Exponent: 0,
+		}),
+	}
 
 	invalidUnmarshalBytes := []byte("invalid bytes")
 
-	pubWithBadAttr := validIAKPub
+	pubWithBadAttr := validIAKPubECC
 	pubWithBadAttr.ObjectAttributes.FixedTPM = false
 	pubWithBadAttrBytes := convertToTPM2BPublic(pubWithBadAttr)
 
-	pubWithBadUserWithAuth := validIAKPub
+	pubWithBadUserWithAuth := validIAKPubECC
 	pubWithBadUserWithAuth.ObjectAttributes.UserWithAuth = false
 	pubWithBadUserWithAuthBytes := convertToTPM2BPublic(pubWithBadUserWithAuth)
 
-	pubWithBadAdminWithPolicy := validIAKPub
+	pubWithBadAdminWithPolicy := validIAKPubECC
 	pubWithBadAdminWithPolicy.ObjectAttributes.AdminWithPolicy = false
 	pubWithBadAdminWithPolicyBytes := convertToTPM2BPublic(pubWithBadAdminWithPolicy)
 
-	pubWithBadNameAlg := validIAKPub
+	pubWithBadNameAlg := validIAKPubECC
 	pubWithBadNameAlg.NameAlg = tpm20.TPMAlgSHA1
 	pubWithBadNameAlgBytes := convertToTPM2BPublic(pubWithBadNameAlg)
 
+	pubWithWrongAuthPolicy := validIAKPubECC
+	pubWithWrongAuthPolicy.AuthPolicy = tpm20.TPM2BDigest{Buffer: []byte{0x01}}
+	pubWithWrongAuthPolicyBytes := convertToTPM2BPublic(pubWithWrongAuthPolicy)
+
+	eccWrongCurve := validIAKPubECC
+	eccWrongCurve.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+		CurveID: tpm20.TPMECCNistP256,
+		Scheme:  tpm20.TPMTECCScheme{Scheme: tpm20.TPMAlgECDSA},
+	})
+	eccWrongCurveBytes := convertToTPM2BPublic(eccWrongCurve)
+
+	eccWrongScheme := validIAKPubECC
+	eccWrongScheme.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+		CurveID: tpm20.TPMECCNistP384,
+		Scheme:  tpm20.TPMTECCScheme{Scheme: tpm20.TPMAlgNull},
+	})
+	eccWrongSchemeBytes := convertToTPM2BPublic(eccWrongScheme)
+
+	rsaWrongKeyBits := validIAKPubRSA
+	rsaWrongKeyBits.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgRSA, &tpm20.TPMSRSAParms{
+		KeyBits: 1024,
+		Scheme:  tpm20.TPMTRSAScheme{Scheme: tpm20.TPMAlgRSASSA},
+	})
+	rsaWrongKeyBitsBytes := convertToTPM2BPublic(rsaWrongKeyBits)
+
+	rsaWrongScheme := validIAKPubRSA
+	rsaWrongScheme.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgRSA, &tpm20.TPMSRSAParms{
+		KeyBits: 2048,
+		Scheme:  tpm20.TPMTRSAScheme{Scheme: tpm20.TPMAlgNull},
+	})
+	rsaWrongSchemeBytes := convertToTPM2BPublic(rsaWrongScheme)
+
+	rsaBadNameAlg := validIAKPubRSA
+	rsaBadNameAlg.NameAlg = tpm20.TPMAlgSHA384
+	rsaBadNameAlgBytes := convertToTPM2BPublic(rsaBadNameAlg)
+
+	pubWithUnsupportedType := validIAKPubRSA
+	pubWithUnsupportedType.Type = tpm20.TPMAlgSymCipher
+	pubWithUnsupportedType.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgSymCipher, &tpm20.TPMSSymCipherParms{
+		Sym: tpm20.TPMTSymDefObject{
+			Algorithm: tpm20.TPMAlgAES,
+			KeyBits:   tpm20.NewTPMUSymKeyBits(tpm20.TPMAlgAES, tpm20.TPMKeyBits(128)),
+			Mode:      tpm20.NewTPMUSymMode(tpm20.TPMAlgAES, tpm20.TPMAlgCFB),
+		},
+	})
+	pubWithUnsupportedTypeBytes := convertToTPM2BPublic(pubWithUnsupportedType)
+
+	eccUnsupportedCurve := validIAKPubECC
+	eccUnsupportedCurve.Parameters = tpm20.NewTPMUPublicParms(tpm20.TPMAlgECC, &tpm20.TPMSECCParms{
+		CurveID: tpm20.TPMECCNistP521,
+		Scheme:  tpm20.TPMTECCScheme{Scheme: tpm20.TPMAlgECDSA},
+	})
+	eccUnsupportedCurveBytes := convertToTPM2BPublic(eccUnsupportedCurve)
+
 	tests := []struct {
-		name   string
-		iakPub []byte
+		name    string
+		iakPub  []byte
+		wantErr error
 	}{
 		{
-			name:   "Unmarshal error",
-			iakPub: invalidUnmarshalBytes,
+			name:    "Unmarshal error",
+			iakPub:  invalidUnmarshalBytes,
+			wantErr: nil, // Error from tpm20.Unmarshal, not wrapping ErrInvalidPubKeyAttributes
 		},
 		{
-			name:   "Attribute mismatch",
-			iakPub: pubWithBadAttrBytes,
+			name:    "Attribute mismatch",
+			iakPub:  pubWithBadAttrBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
 		},
 		{
-			name:   "UserWithAuth mismatch",
-			iakPub: pubWithBadUserWithAuthBytes,
+			name:    "UserWithAuth mismatch",
+			iakPub:  pubWithBadUserWithAuthBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
 		},
 		{
-			name:   "AdminWithPolicy mismatch",
-			iakPub: pubWithBadAdminWithPolicyBytes,
+			name:    "AdminWithPolicy mismatch",
+			iakPub:  pubWithBadAdminWithPolicyBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
 		},
 		{
-			name:   "Invalid NameAlg",
-			iakPub: pubWithBadNameAlgBytes,
+			name:    "Invalid NameAlg",
+			iakPub:  pubWithBadNameAlgBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "Wrong AuthPolicy mismatch",
+			iakPub:  pubWithWrongAuthPolicyBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "ECC Wrong Curve mismatch",
+			iakPub:  eccWrongCurveBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "ECC Wrong Scheme mismatch",
+			iakPub:  eccWrongSchemeBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "RSA Wrong KeyBits mismatch",
+			iakPub:  rsaWrongKeyBitsBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "RSA Wrong Scheme mismatch",
+			iakPub:  rsaWrongSchemeBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "RSA Bad NameAlg mismatch",
+			iakPub:  rsaBadNameAlgBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "Unsupported Key Type mismatch",
+			iakPub:  pubWithUnsupportedTypeBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
+		},
+		{
+			name:    "ECC Unsupported Curve mismatch",
+			iakPub:  eccUnsupportedCurveBytes,
+			wantErr: ErrInvalidPubKeyAttributes,
 		},
 	}
 
@@ -340,7 +592,10 @@ func TestVerifyIAKAttributes_Failure(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := u.VerifyIAKAttributes(tc.iakPub)
 			if err == nil {
-				t.Error("VerifyIAKAttributes() expected an error, but got nil")
+				t.Fatalf("VerifyIAKAttributes() expected an error, but got nil")
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Errorf("VerifyIAKAttributes() error = %v, want error wrapping %v", err, tc.wantErr)
 			}
 		})
 	}
