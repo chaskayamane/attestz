@@ -343,19 +343,14 @@ func TestDeviceClient(t *testing.T) {
 	if rotateResp == nil {
 		t.Errorf("RotateOIakCert() returned nil response")
 	}
-	if gotUpdates := mockServer.rotateOIakReq.GetUpdates(); len(gotUpdates) != 1 {
-		t.Errorf("RotateOIakCert() got %d updates, want 1", len(gotUpdates))
-	} else {
-		gotUpdate := gotUpdates[0]
-		if gotUpdate.GetOiakCert() != "test-oiak-cert" {
-			t.Errorf("GetOiakCert() = %q, want %q", gotUpdate.GetOiakCert(), "test-oiak-cert")
-		}
-		if gotUpdate.GetOidevidCert() != "test-oidevid-cert" {
-			t.Errorf("GetOidevidCert() = %q, want %q", gotUpdate.GetOidevidCert(), "test-oidevid-cert")
-		}
-		if gotRole := gotUpdate.GetControlCardSelection().GetRole(); gotRole != cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE {
-			t.Errorf("GetRole() = %v, want %v", gotRole, cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE)
-		}
+	if got := mockServer.rotateOIakReq.GetOiakCert(); got != "test-oiak-cert" {
+		t.Errorf("GetOiakCert() = %q, want %q", got, "test-oiak-cert")
+	}
+	if got := mockServer.rotateOIakReq.GetOidevidCert(); got != "test-oidevid-cert" {
+		t.Errorf("GetOidevidCert() = %q, want %q", got, "test-oidevid-cert")
+	}
+	if gotRole := mockServer.rotateOIakReq.GetControlCardSelection().GetRole(); gotRole != cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE {
+		t.Errorf("GetRole() = %v, want %v", gotRole, cpb.ControlCardRole_CONTROL_CARD_ROLE_ACTIVE)
 	}
 
 	// Verify RotateOIakCert with updates already set

@@ -224,14 +224,6 @@ func (d *deviceClient) GetIakCert(ctx context.Context, req *epb.GetIakCertReques
 }
 
 func (d *deviceClient) RotateOIakCert(ctx context.Context, req *epb.RotateOIakCertRequest) (*epb.RotateOIakCertResponse, error) {
-	// Populate req.Updates with top-level values that are not checked by some switches.
-	if req != nil && (req.GetControlCardSelection() != nil || req.GetOiakCert() != "" || req.GetOidevidCert() != "") {
-		req.Updates = append(req.Updates, &epb.ControlCardCertUpdate{
-			ControlCardSelection: req.GetControlCardSelection(),
-			OiakCert:             req.GetOiakCert(),
-			OidevidCert:          req.GetOidevidCert(),
-		})
-	}
 	return d.client.RotateOIakCert(ctx, req)
 }
 

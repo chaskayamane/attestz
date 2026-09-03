@@ -2555,12 +2555,26 @@ func TestRotateOIakCert(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 				{
 					SslProfileId:         sslProfileID,
 					ControlCardSelection: controlCardSelection2,
 					OiakCert:             oIakCert2,
 					OidevidCert:          oIdevIDCert2,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection2,
+							OiakCert:             oIakCert2,
+							OidevidCert:          oIdevIDCert2,
+						},
+					},
 				},
 			},
 			mockErrs: []error{nil, nil},
@@ -2581,6 +2595,13 @@ func TestRotateOIakCert(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 			},
 			mockErrs: []error{nil},
@@ -2641,6 +2662,13 @@ func TestRotateOIakCert(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 			},
 			mockErrs: []error{errorResp},
@@ -2667,12 +2695,26 @@ func TestRotateOIakCert(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 				{
 					SslProfileId:         sslProfileID,
 					ControlCardSelection: controlCardSelection2,
 					OiakCert:             oIakCert2,
 					OidevidCert:          oIdevIDCert2,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection2,
+							OiakCert:             oIakCert2,
+							OidevidCert:          oIdevIDCert2,
+						},
+					},
 				},
 			},
 			mockErrs: []error{nil, errorResp},
@@ -2694,6 +2736,13 @@ func TestRotateOIakCert(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 			},
 			mockErrs: []error{errorResp},
@@ -2841,12 +2890,26 @@ func TestIssueAndRotateOwnerCerts(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 				{
 					SslProfileId:         sslProfileID,
 					ControlCardSelection: controlCardSelection2,
 					OiakCert:             oIakCert2,
 					OidevidCert:          oIdevIDCert2,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection2,
+							OiakCert:             oIakCert2,
+							OidevidCert:          oIdevIDCert2,
+						},
+					},
 				},
 			},
 		},
@@ -3033,12 +3096,26 @@ func TestIssueAndRotateOwnerCerts(t *testing.T) {
 					ControlCardSelection: controlCardSelection1,
 					OiakCert:             oIakCert1,
 					OidevidCert:          oIdevIDCert1,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection1,
+							OiakCert:             oIakCert1,
+							OidevidCert:          oIdevIDCert1,
+						},
+					},
 				},
 				{
 					SslProfileId:         sslProfileID,
 					ControlCardSelection: controlCardSelection2,
 					OiakCert:             oIakCert2,
 					OidevidCert:          oIdevIDCert2,
+					Updates: []*epb.ControlCardCertUpdate{
+						{
+							ControlCardSelection: controlCardSelection2,
+							OiakCert:             oIakCert2,
+							OidevidCert:          oIdevIDCert2,
+						},
+					},
 				},
 			},
 		},
