@@ -37,7 +37,6 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/security/advancedtls"
 
 	cpb "github.com/openconfig/attestz/proto/common_definitions"
 	epb "github.com/openconfig/attestz/proto/tpm_enrollz"
@@ -307,17 +306,12 @@ func main() {
 		if err != nil {
 			log.Exitf("Failed to issue client TLS cert: %v", err)
 		}
-		advancedCreds, err := advancedtls.NewClientCreds(&advancedtls.Options{
-			VerificationType: advancedtls.CertVerification,
-			MinTLSVersion:    tls.VersionTLS13,
-			MaxTLSVersion:    tls.VersionTLS13,
-			RootOptions:      advancedtls.RootCertificateOptions{RootCertificates: caPool},
-			IdentityOptions:  advancedtls.IdentityCertificateOptions{Certificates: []tls.Certificate{clientTLSCred}},
+		creds = credentials.NewTLS(&tls.Config{
+			Certificates: []tls.Certificate{clientTLSCred},
+			RootCAs:      caPool,
+			MinVersion:   tls.VersionTLS13,
+			MaxVersion:   tls.VersionTLS13,
 		})
-		if err != nil {
-			log.Exitf("Failed to create new advancedtls Client Creds: %v", err)
-		}
-		creds = advancedCreds
 	}
 
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(creds))
