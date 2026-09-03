@@ -23,10 +23,6 @@ go_library(
     srcs = [
         "enrollz_emulator.go",
     ],
-    data = [
-        "owner_ca_cert.pem",
-        "owner_ca_key.pem",
-    ],
     importpath = "github.com/openconfig/attestz/service/emulator",
     visibility = ["//visibility:public"],
     deps = [
@@ -43,10 +39,6 @@ go_library(
 
 go_binary(
     name = "enrollz_emulator",
-    data = [
-        "owner_ca_cert.pem",
-        "owner_ca_key.pem",
-    ],
     embed = [":enrollz_emulator_lib"],
     pure = "on",
     visibility = ["//visibility:public"],
@@ -55,10 +47,6 @@ go_binary(
 go_test(
     name = "enrollz_emulator_test",
     srcs = ["enrollz_emulator_test.go"],
-    data = [
-        "owner_ca_cert.pem",
-        "owner_ca_key.pem",
-    ],
     embed = [":enrollz_emulator_lib"],
     deps = [
         "//proto:common_definitions_go_proto",
@@ -76,15 +64,6 @@ tar(
     mutate = mutate(strip_prefix = package_name() + "/enrollz_emulator_"),
 )
 
-tar(
-    name = "certs_layer",
-    srcs = [
-        "owner_ca_cert.pem",
-        "owner_ca_key.pem",
-    ],
-    out = "certs_layer.tar",
-)
-
 assert_archive_contains(
     name = "test_emulator_layer",
     archive = "emulator_layer.tar",
@@ -97,7 +76,6 @@ oci_image(
     entrypoint = ["/enrollz_emulator"],
     tars = [
         ":emulator_layer",
-        ":certs_layer",
     ],
 )
 

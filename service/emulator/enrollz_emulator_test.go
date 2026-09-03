@@ -22,9 +22,14 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
+	"math/big"
 	"net"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -51,8 +56,64 @@ func generateTestKeyPem(t *testing.T) string {
 	return string(block)
 }
 
+func generateTestOwnerCACertAndKey(t *testing.T) (string, string) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatalf("failed to generate key: %v", err)
+	}
+	serialNumber, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatalf("failed to generate serial number: %v", err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"Switch Owner CA"},
+			CommonName:   "Switch Owner Root CA",
+		},
+		NotBefore:             time.Now().Add(-1 * time.Hour),
+		NotAfter:              time.Now().AddDate(10, 0, 0),
+		IsCA:                  true,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+	}
+	certDer, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("failed to create CA certificate: %v", err)
+	}
+
+	keyDer, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatalf("failed to marshal private key: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "owner_ca_cert.pem")
+	keyPath := filepath.Join(dir, "owner_ca_key.pem")
+
+	certPem := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: certDer,
+	})
+	if err := os.WriteFile(certPath, certPem, 0644); err != nil {
+		t.Fatalf("failed to write cert file: %v", err)
+	}
+
+	keyPem := pem.EncodeToMemory(&pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: keyDer,
+	})
+	if err := os.WriteFile(keyPath, keyPem, 0600); err != nil {
+		t.Fatalf("failed to write key file: %v", err)
+	}
+
+	return certPath, keyPath
+}
+
 func TestOwnerCA(t *testing.T) {
-	ca, err := newOwnerCA("owner_ca_cert.pem", "owner_ca_key.pem")
+	certPath, keyPath := generateTestOwnerCACertAndKey(t)
+	ca, err := newOwnerCA(certPath, keyPath)
 	if err != nil {
 		t.Fatalf("newOwnerCA() returned unexpected error: %v", err)
 	}
@@ -112,10 +173,11 @@ func TestOwnerCA(t *testing.T) {
 }
 
 func TestNewOwnerCAErrors(t *testing.T) {
-	if _, err := newOwnerCA("nonexistent_cert.pem", "owner_ca_key.pem"); err == nil {
+	certPath, keyPath := generateTestOwnerCACertAndKey(t)
+	if _, err := newOwnerCA("nonexistent_cert.pem", keyPath); err == nil {
 		t.Errorf("newOwnerCA() with nonexistent cert should fail, got nil")
 	}
-	if _, err := newOwnerCA("owner_ca_cert.pem", "nonexistent_key.pem"); err == nil {
+	if _, err := newOwnerCA(certPath, "nonexistent_key.pem"); err == nil {
 		t.Errorf("newOwnerCA() with nonexistent key should fail, got nil")
 	}
 }
