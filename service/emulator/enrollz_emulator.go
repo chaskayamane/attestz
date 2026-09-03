@@ -299,10 +299,9 @@ func main() {
 			log.Exitf("Failed to issue client TLS cert: %v", err)
 		}
 		creds = credentials.NewTLS(&tls.Config{
-			Certificates: []tls.Certificate{clientTLSCred},
-			RootCAs:      caPool,
-			MinVersion:   tls.VersionTLS13,
-			MaxVersion:   tls.VersionTLS13,
+			Certificates:       []tls.Certificate{clientTLSCred},
+			RootCAs:            caPool,
+			InsecureSkipVerify: true,
 		})
 	}
 
