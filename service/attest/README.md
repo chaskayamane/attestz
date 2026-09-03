@@ -14,14 +14,14 @@ AttestRequest{
         }
     },
     nonce: <32_byte_random>,
-    hash_algo: TPM_2_0_HASH_ALGO_SHA256,
+    hash_algo: TPM_2_0_HASH_ALGO_SHA384,
     pcr_indices: [<indices_from_expected_pcrs>]
 }
 ```
 
 - **Control Card Selection**: Active control card (`CONTROL_CARD_ROLE_ACTIVE`).
 - **Nonce**: 32 cryptographically secure random bytes generated per request via `crypto/rand`.
-- **Hash Algorithm**: TPM 2.0 SHA256 bank (`TPM_2_0_HASH_ALGO_SHA256`).
+- **Hash Algorithm**: TPM 2.0 PCR bank (`TPM_2_0_HASH_ALGO_SHA384` by default, or `TPM_2_0_HASH_ALGO_SHA256`).
 - **PCR Indices**: Dynamically derived from the keys in `--expected_pcrs`.
 
 ---
@@ -37,6 +37,7 @@ The binary accepts the following flags:
 | `-owner_ca_cert` | string | `""`              | Path to the owner CA certificate file for TLS configuration.                      |
 | `-owner_ca_key`  | string | `""`              | Path to the owner CA private key file for generating client mTLS credentials.     |
 | `-expected_pcrs` | string | `""`              | JSON string mapping PCR index to hex digest (e.g. `'{"0":"<hex>","4":"<hex>"}'`). |
+| `-hash_algo`     | string | `SHA384`          | TPM 2.0 PCR hash algorithm (`"SHA256"` or `"SHA384"`).                            |
 
 ---
 

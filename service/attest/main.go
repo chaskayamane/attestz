@@ -34,6 +34,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	log "github.com/golang/glog"
@@ -51,6 +52,7 @@ var (
 	ownerCACert      = flag.String("owner_ca_cert", "", "Path to the owner CA certificate file")
 	ownerCAKey       = flag.String("owner_ca_key", "", "Path to the owner CA private key file")
 	expectedPCRsFlag = flag.String("expected_pcrs", "", `JSON string mapping PCR index to hex digest (e.g. '{"0":"a1b2...","4":"c3d4..."}')`)
+	hashAlgoFlag     = flag.String("hash_algo", "SHA384", `TPM 2.0 PCR hash algorithm ("SHA256" or "SHA384")`)
 )
 
 // parseExpectedPCRs parses a JSON string mapping PCR index to hex digest.
@@ -80,10 +82,26 @@ func parseExpectedPCRs(jsonStr string) (map[int][]byte, error) {
 	return pcrs, nil
 }
 
+// parseHashAlgo parses a string into a Tpm20HashAlgo (supports SHA256 and SHA384).
+func parseHashAlgo(s string) (cpb.Tpm20HashAlgo, error) {
+	switch strings.ToUpper(strings.TrimSpace(s)) {
+	case "SHA256", "TPM_2_0_HASH_ALGO_SHA256":
+		return cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA256, nil
+	case "SHA384", "TPM_2_0_HASH_ALGO_SHA384":
+		return cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA384, nil
+	default:
+		return cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_UNSPECIFIED, fmt.Errorf("unsupported hash algorithm %q: must be SHA256 or SHA384", s)
+	}
+}
+
 // createAttestRequest constructs an AttestRequest for the active control card
-// with a 32-byte random nonce, SHA256 hash algorithm, and specified PCR indices.
+// with a 32-byte random nonce, specified hash algorithm, and specified PCR indices.
+// If hashAlgo is unspecified, it defaults to SHA384.
 // If no indices are provided, it defaults to [0, 4, 7].
-func createAttestRequest(pcrIndices ...int32) (*apb.AttestRequest, error) {
+func createAttestRequest(hashAlgo cpb.Tpm20HashAlgo, pcrIndices ...int32) (*apb.AttestRequest, error) {
+	if hashAlgo == cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_UNSPECIFIED {
+		hashAlgo = cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA384
+	}
 	indices := pcrIndices
 	if len(indices) == 0 {
 		indices = []int32{0, 4, 7}
@@ -99,25 +117,9 @@ func createAttestRequest(pcrIndices ...int32) (*apb.AttestRequest, error) {
 			},
 		},
 		Nonce:      nonce,
-		HashAlgo:   cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA256,
+		HashAlgo:   hashAlgo,
 		PcrIndices: indices,
 	}, nil
-}
-
-// attest calls the Attest RPC on the given client with the request.
-// If no request is provided, createAttestRequest() is used to create a default request.
-func attest(ctx context.Context, client apb.TpmAttestzServiceClient, reqs ...*apb.AttestRequest) (*apb.AttestResponse, error) {
-	var req *apb.AttestRequest
-	if len(reqs) > 0 && reqs[0] != nil {
-		req = reqs[0]
-	} else {
-		var err error
-		req, err = createAttestRequest()
-		if err != nil {
-			return nil, err
-		}
-	}
-	return client.Attest(ctx, req)
 }
 
 func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
@@ -200,6 +202,11 @@ func main() {
 	flag.Parse()
 	ctx := context.Background()
 
+	hashAlgo, err := parseHashAlgo(*hashAlgoFlag)
+	if err != nil {
+		log.Exitf("Invalid --hash_algo: %v", err)
+	}
+
 	expectedPCRs, err := parseExpectedPCRs(*expectedPCRsFlag)
 	if err != nil {
 		log.Exitf("Invalid --expected_pcrs: %v", err)
@@ -254,20 +261,20 @@ func main() {
 	}
 	defer conn.Close()
 
-	req, err := createAttestRequest(pcrIndices...)
+	req, err := createAttestRequest(hashAlgo, pcrIndices...)
 	if err != nil {
 		log.Exitf("Failed to create attest request: %v", err)
 	}
 
 	client := apb.NewTpmAttestzServiceClient(conn)
-	resp, err := attest(ctx, client, req)
+	resp, err := client.Attest(ctx, req)
 	if err != nil {
 		log.Exitf("Attest RPC failed: %v", err)
 	}
 
 	log.Infof("AttestResponse:\n%s", prototext.Format(resp))
 
-	if err := VerifyRemoteAttestation(resp, expectedPCRs, requestedIndices, req.GetNonce(), trustedRoots, nil); err != nil {
+	if err := VerifyRemoteAttestation(resp, expectedPCRs, requestedIndices, req.GetNonce(), trustedRoots, nil, hashAlgo); err != nil {
 		log.Exitf("Remote attestation verification failed: %v", err)
 	}
 	log.Infof("Remote attestation verification succeeded")

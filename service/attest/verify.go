@@ -19,6 +19,7 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/sha512"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -26,11 +27,35 @@ import (
 	"sort"
 
 	"github.com/google/go-tpm/tpm2"
+	cpb "github.com/openconfig/attestz/proto/common_definitions"
 	apb "github.com/openconfig/attestz/proto/tpm_attestz"
 )
 
 // VerifyRemoteAttestation fully validates evidence. Requires standard root/intermediate CA pools.
-func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]byte, requestedIndices []int, expectedNonce []byte, trustedRoots *x509.CertPool, intermediates *x509.CertPool) error {
+func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]byte, requestedIndices []int, expectedNonce []byte, trustedRoots *x509.CertPool, intermediates *x509.CertPool, hashAlgo cpb.Tpm20HashAlgo) error {
+	var (
+		cryptoHash    crypto.Hash
+		tpmAlg        tpm2.TPMAlgID
+		computeDigest func([]byte) []byte
+	)
+	switch hashAlgo {
+	case cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA256:
+		cryptoHash = crypto.SHA256
+		tpmAlg = tpm2.TPMAlgSHA256
+		computeDigest = func(b []byte) []byte {
+			d := sha256.Sum256(b)
+			return d[:]
+		}
+	case cpb.Tpm20HashAlgo_TPM_2_0_HASH_ALGO_SHA384:
+		cryptoHash = crypto.SHA384
+		tpmAlg = tpm2.TPMAlgSHA384
+		computeDigest = func(b []byte) []byte {
+			d := sha512.Sum384(b)
+			return d[:]
+		}
+	default:
+		return fmt.Errorf("unsupported hash algorithm %v: must be SHA256 or SHA384", hashAlgo)
+	}
 	// 1. Parse and cryptographically verify the OIAK against the Root/Intermediate CA chain.
 	block, _ := pem.Decode([]byte(resp.GetAttestationCert().GetOiakCert()))
 	if block == nil {
@@ -56,8 +81,8 @@ func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]by
 	}
 
 	// 2. Extract public key to verify raw Signature (not a TPMT_SIGNATURE) against the Quote.
-	hash := sha256.Sum256(resp.GetQuoted())
-	if err := rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hash[:], resp.GetQuoteSignature()); err != nil {
+	hash := computeDigest(resp.GetQuoted())
+	if err := rsa.VerifyPKCS1v15(pubKey, cryptoHash, hash, resp.GetQuoteSignature()); err != nil {
 		return fmt.Errorf("quote signature verification failed: %v", err)
 	}
 
@@ -102,7 +127,7 @@ func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]by
 	expectedPcrSelect := tpm2.TPMLPCRSelection{
 		PCRSelections: []tpm2.TPMSPCRSelection{
 			{
-				Hash:      tpm2.TPMAlgSHA256,
+				Hash:      tpmAlg,
 				PCRSelect: pcrBitmask,
 			},
 		},
@@ -125,8 +150,8 @@ func VerifyRemoteAttestation(resp *apb.AttestResponse, expectedPCRs map[int][]by
 		pcrConcat = append(pcrConcat, devicePcrBytes...)
 	}
 
-	reportedDigest := sha256.Sum256(pcrConcat)
-	if !bytes.Equal(quote.PCRDigest.Buffer, reportedDigest[:]) {
+	reportedDigest := computeDigest(pcrConcat)
+	if !bytes.Equal(quote.PCRDigest.Buffer, reportedDigest) {
 		return fmt.Errorf("integrity violation: raw PCR values provided do not logically yield the quote's PCR digest")
 	}
 
