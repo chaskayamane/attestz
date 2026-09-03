@@ -238,6 +238,8 @@ func TestVerifyIakAndIDevIDCerts(t *testing.T) {
 		customIDevIDCaRootPem string
 		// To simulate a verifying iak for a secondary control card for which IDevID is optional.
 		noIDevID bool
+		// To skip serial number verification in certs.
+		skipVerifySerialNumberInCert bool
 	}{
 		{
 			desc:                    "Success: RSA 4096 IAK and ECC P384 IDevID certs",
@@ -528,6 +530,34 @@ func TestVerifyIakAndIDevIDCerts(t *testing.T) {
 			iDevIDCertNotAfter:      time.Now().AddDate(1, 0, 0),
 			customIDevIDCaRootPem:   unknownCaCert.certPem,
 		},
+		{
+			desc:                         "Success: IAK & IDevID cert subject serials do not match expected control card serial in request when VerifySerialNumberInCert is false",
+			wantError:                    false,
+			cardID:                       cardID,
+			iakCertAsymAlgo:              eccP384Algo,
+			iakCertSubjectSerial:         "AN0TH3RS3R1ALNUMB3R",
+			iakCertNotBefore:             time.Now(),
+			iakCertNotAfter:              time.Now().AddDate(0, 0, 10),
+			iDevIDCertAsymAlgo:           eccP384Algo,
+			iDevIDCertSubjectSerial:      "AN0TH3RS3R1ALNUMB3R",
+			iDevIDCertNotBefore:          time.Now(),
+			iDevIDCertNotAfter:           time.Now().AddDate(1, 0, 0),
+			skipVerifySerialNumberInCert: true,
+		},
+		{
+			desc:                         "Success: IAK cert and IDevID cert subject serials do not match when VerifySerialNumberInCert is false",
+			wantError:                    false,
+			cardID:                       cardID,
+			iakCertAsymAlgo:              eccP384Algo,
+			iakCertSubjectSerial:         certSerial,
+			iakCertNotBefore:             time.Now(),
+			iakCertNotAfter:              time.Now().AddDate(0, 0, 10),
+			iDevIDCertAsymAlgo:           eccP384Algo,
+			iDevIDCertSubjectSerial:      "AN0TH3RS3R1ALNUMB3R",
+			iDevIDCertNotBefore:          time.Now(),
+			iDevIDCertNotAfter:           time.Now().AddDate(1, 0, 0),
+			skipVerifySerialNumberInCert: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -608,10 +638,11 @@ func TestVerifyIakAndIDevIDCerts(t *testing.T) {
 
 			// Call TpmCertVerifier's default impl of VerifyIakAndIDevIDCerts().
 			req := &VerifyIakAndIDevIDCertsReq{
-				ControlCardID:        test.cardID,
-				IakCertPem:           iakCertPemReq,
-				IDevIDCertPem:        iDevIDCertPemReq,
-				CertVerificationOpts: certVerificationOptsReq,
+				ControlCardID:            test.cardID,
+				IakCertPem:               iakCertPemReq,
+				IDevIDCertPem:            iDevIDCertPemReq,
+				CertVerificationOpts:     certVerificationOptsReq,
+				VerifySerialNumberInCert: !test.skipVerifySerialNumberInCert,
 			}
 			ctx := context.Background()
 			defTpmCertVerifier := DefaultTpmCertVerifier{}
@@ -710,6 +741,8 @@ func TestVerifyTpmCert(t *testing.T) {
 		customCertPem string
 		// To simulate cert signature validation failure.
 		customCaRootPem string
+		// To skip serial number verification in certs.
+		skipVerifySerialNumberInCert bool
 	}{
 		{
 			desc:              "Success: RSA 4096 cert",
@@ -857,6 +890,15 @@ func TestVerifyTpmCert(t *testing.T) {
 			certNotBefore:     time.Now(),
 			certNotAfter:      time.Now().AddDate(1, 0, 0),
 		},
+		{
+			desc:                         "Success: Cert subject serial does not match expected control card serial in request when VerifySerialNumberInCert is false",
+			wantError:                    false,
+			certAsymAlgo:                 eccP384Algo,
+			certSubjectSerial:            "AN0TH3RS3R1ALNUMB3R",
+			certNotBefore:                time.Now(),
+			certNotAfter:                 time.Now().AddDate(1, 0, 0),
+			skipVerifySerialNumberInCert: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -920,9 +962,10 @@ func TestVerifyTpmCert(t *testing.T) {
 
 			// Call TpmCertVerifier's default impl of VerifyTpmCert().
 			req := &VerifyTpmCertReq{
-				ControlCardID:        cardID,
-				CertPem:              certPemReq,
-				CertVerificationOpts: certVerificationOptsReq,
+				ControlCardID:            cardID,
+				CertPem:                  certPemReq,
+				CertVerificationOpts:     certVerificationOptsReq,
+				VerifySerialNumberInCert: !test.skipVerifySerialNumberInCert,
 			}
 			ctx := context.Background()
 			defTpmCertVerifier := DefaultTpmCertVerifier{}

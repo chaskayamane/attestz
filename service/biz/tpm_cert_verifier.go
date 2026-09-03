@@ -37,6 +37,8 @@ type VerifyIakAndIDevIDCertsReq struct {
 	IakCertPem string
 	// PEM-encoded IDevID x509 TLS cert.
 	IDevIDCertPem string
+	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
+	VerifySerialNumberInCert bool
 }
 
 // VerifyIakAndIDevIDCertsResp is the response from VerifyIakAndIDevIDCerts().
@@ -55,6 +57,8 @@ type VerifyTpmCertReq struct {
 	CertVerificationOpts x509.VerifyOptions
 	// PEM-encoded x509 attestation IAK or TLS IDevID cert.
 	CertPem string
+	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
+	VerifySerialNumberInCert bool
 }
 
 // VerifyTpmCertResp is the response from VerifyTpmCert().
@@ -122,21 +126,25 @@ func (tcv *DefaultTpmCertVerifier) VerifyIakAndIDevIDCerts(ctx context.Context, 
 	}
 	log.InfoContext(ctx, "Successfully verified and parsed IAK cert")
 
-	// Verify IAK cert subject serial and expected control card serial numbers match.
-	iakSerialNumber, err := getCertSerialNumber(iakX509.Subject.SerialNumber)
-	if err != nil {
-		err = fmt.Errorf("failed to get serial number from IAK cert subject serial %v: %v", iakX509.Subject.SerialNumber, err)
-		log.ErrorContext(ctx, err)
-		return nil, err
-	}
+	var iakSerialNumber string
+	if req.VerifySerialNumberInCert {
+		// Verify IAK cert subject serial and expected control card serial numbers match.
+		var err error
+		iakSerialNumber, err = getCertSerialNumber(iakX509.Subject.SerialNumber)
+		if err != nil {
+			err = fmt.Errorf("failed to get serial number from IAK cert subject serial %v: %v", iakX509.Subject.SerialNumber, err)
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
 
-	if iakSerialNumber != req.ControlCardID.GetChassisSerialNumber() && iakSerialNumber != req.ControlCardID.GetControlCardSerial() {
-		err = fmt.Errorf("mismatched subject serial number: IAK certs' is %v and chassis serial from request's is %v, and control card serial is %v",
-			iakSerialNumber, req.ControlCardID.GetChassisSerialNumber(), req.ControlCardID.GetControlCardSerial())
-		log.ErrorContext(ctx, err)
-		return nil, err
+		if iakSerialNumber != req.ControlCardID.GetChassisSerialNumber() && iakSerialNumber != req.ControlCardID.GetControlCardSerial() {
+			err = fmt.Errorf("mismatched subject serial number: IAK certs' is %v and chassis serial from request's is %v, and control card serial is %v",
+				iakSerialNumber, req.ControlCardID.GetChassisSerialNumber(), req.ControlCardID.GetControlCardSerial())
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
+		log.InfoContextf(ctx, "Subject serial number in IAK/IDevID cert and expected control card or chassis serial from request match: %s", iakX509.Subject.SerialNumber)
 	}
-	log.InfoContextf(ctx, "Subject serial number in IAK/IDevID cert and expected control card or chassis serial from request match: %s", iakX509.Subject.SerialNumber)
 
 	// Verify and convert IAK certs' pub keys to PEM.
 	iakPubPem, err := VerifyAndSerializePubKey(ctx, iakX509)
@@ -164,20 +172,22 @@ func (tcv *DefaultTpmCertVerifier) VerifyIakAndIDevIDCerts(ctx context.Context, 
 	}
 	log.InfoContext(ctx, "Successfully verified and parsed IDevID cert")
 
-	// Verify IAK and IDevID cert subject serials match.
-	iDevIDSerialNumber, err := getCertSerialNumber(iDevIDX509.Subject.SerialNumber)
-	if err != nil {
-		err = fmt.Errorf("failed to get serial number from iDevID cert subject serial %v: %v", iakX509.Subject.SerialNumber, err)
-		log.ErrorContext(ctx, err)
-		return nil, err
+	if req.VerifySerialNumberInCert {
+		// Verify IAK and IDevID cert subject serials match.
+		iDevIDSerialNumber, err := getCertSerialNumber(iDevIDX509.Subject.SerialNumber)
+		if err != nil {
+			err = fmt.Errorf("failed to get serial number from iDevID cert subject serial %v: %v", iakX509.Subject.SerialNumber, err)
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
+		if iakSerialNumber != iDevIDSerialNumber {
+			err = fmt.Errorf("mismatched subject serial numbers. IAK's is %v and IDevID certs' is %v",
+				iakSerialNumber, iDevIDSerialNumber)
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
+		log.InfoContextf(ctx, "Subject serial numbers of IAK and IDevID certs match: %s", iakSerialNumber)
 	}
-	if iakSerialNumber != iDevIDSerialNumber {
-		err = fmt.Errorf("mismatched subject serial numbers. IAK's is %v and IDevID certs' is %v",
-			iakSerialNumber, iDevIDSerialNumber)
-		log.ErrorContext(ctx, err)
-		return nil, err
-	}
-	log.InfoContextf(ctx, "Subject serial numbers of IAK and IDevID certs match: %s", iakSerialNumber)
 
 	// Verify and convert IDevID certs' pub keys to PEM.
 	iDevIDPubPem, err := VerifyAndSerializePubKey(ctx, iDevIDX509)
@@ -222,22 +232,24 @@ func (tcv *DefaultTpmCertVerifier) VerifyTpmCert(ctx context.Context, req *Verif
 	}
 	log.InfoContext(ctx, "Successfully verified and parsed PEM cert into x509 structure")
 
-	// Verify cert subject serial and expected control card serial numbers match.
-	certSerialNumber, err := getCertSerialNumber(certX509.Subject.SerialNumber)
-	if err != nil {
-		err = fmt.Errorf("failed to get serial number from IAK cert subject serial %v: %v", certX509.Subject.SerialNumber, err)
-		log.ErrorContext(ctx, err)
-		return nil, err
-	}
+	if req.VerifySerialNumberInCert {
+		// Verify cert subject serial and expected control card serial numbers match.
+		certSerialNumber, err := getCertSerialNumber(certX509.Subject.SerialNumber)
+		if err != nil {
+			err = fmt.Errorf("failed to get serial number from IAK cert subject serial %v: %v", certX509.Subject.SerialNumber, err)
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
 
-	// Verify IAK/IDevID cert subject serial and expected control card serial numbers match.
-	if certSerialNumber != req.ControlCardID.GetChassisSerialNumber() && certSerialNumber != req.ControlCardID.GetControlCardSerial() {
-		err = fmt.Errorf("mismatched subject serial number. IAK/IDevID certs' is %v and expected control card serial from request's is %v or %v",
-			certSerialNumber, req.ControlCardID.GetControlCardSerial(), req.ControlCardID.GetChassisSerialNumber())
-		log.ErrorContext(ctx, err)
-		return nil, err
+		// Verify IAK/IDevID cert subject serial and expected control card serial numbers match.
+		if certSerialNumber != req.ControlCardID.GetChassisSerialNumber() && certSerialNumber != req.ControlCardID.GetControlCardSerial() {
+			err = fmt.Errorf("mismatched subject serial number. IAK/IDevID certs' is %v and expected control card serial from request's is %v or %v",
+				certSerialNumber, req.ControlCardID.GetControlCardSerial(), req.ControlCardID.GetChassisSerialNumber())
+			log.ErrorContext(ctx, err)
+			return nil, err
+		}
+		log.InfoContextf(ctx, "Subject serial number in IAK/IDevID cert and expected control card serial from request match: %s", certX509.Subject.SerialNumber)
 	}
-	log.InfoContextf(ctx, "Subject serial number in IAK/IDevID cert and expected control card serial from request match: %s", certX509.Subject.SerialNumber)
 
 	// Verify and convert x509 cert pub key to PEM.
 	pubKeyPem, err := VerifyAndSerializePubKey(ctx, certX509)

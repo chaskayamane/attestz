@@ -22,7 +22,6 @@ go_library(
     name = "enrollz_emulator_lib",
     srcs = [
         "enrollz_emulator.go",
-        "tpm_verifier_sans_sn.go",
     ],
     data = [
         "owner_ca_cert.pem",
@@ -67,17 +66,6 @@ go_test(
         "//service/biz:enrollz_biz",
         "@org_golang_google_grpc//:grpc",
         "@org_golang_google_grpc//credentials/insecure",
-    ],
-)
-
-go_test(
-    name = "tpm_verifier_sans_sn_test",
-    srcs = ["tpm_verifier_sans_sn_test.go"],
-    embed = [":enrollz_emulator_lib"],
-    deps = [
-        "//proto:common_definitions_go_proto",
-        "//service/biz:enrollz_biz",
-        "@com_github_google_go_cmp//cmp",
     ],
 )
 
