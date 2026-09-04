@@ -30,8 +30,8 @@ import (
 	"time"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/security/advancedtls"
 
 	cpb "github.com/openconfig/attestz/proto/common_definitions"
 	epb "github.com/openconfig/attestz/proto/tpm_enrollz"
@@ -453,17 +453,13 @@ func TestEnrollzAgainstDeviceServerMTLS(t *testing.T) {
 	ownerPool := x509.NewCertPool()
 	ownerPool.AddCert(ownerCa.cert)
 
-	serverCreds, err := advancedtls.NewServerCreds(&advancedtls.Options{
-		IdentityOptions:   advancedtls.IdentityCertificateOptions{Certificates: []tls.Certificate{server.TLSCertificate()}},
-		RequireClientCert: true,
-		MinTLSVersion:     tls.VersionTLS13,
-		MaxTLSVersion:     tls.VersionTLS13,
-		VerificationType:  advancedtls.CertVerification,
-		RootOptions:       advancedtls.RootCertificateOptions{RootCertificates: ownerPool},
+	serverCreds := credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{server.TLSCertificate()},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    ownerPool,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
 	})
-	if err != nil {
-		t.Fatalf("failed to create server creds: %v", err)
-	}
 
 	lis, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -482,16 +478,12 @@ func TestEnrollzAgainstDeviceServerMTLS(t *testing.T) {
 	}
 
 	clientTLSCert := ownerCa.issueClientTLSCert(t)
-	clientCreds, err := advancedtls.NewClientCreds(&advancedtls.Options{
-		VerificationType: advancedtls.CertVerification,
-		MinTLSVersion:    tls.VersionTLS13,
-		MaxTLSVersion:    tls.VersionTLS13,
-		RootOptions:      advancedtls.RootCertificateOptions{RootCertificates: vendorPool},
-		IdentityOptions:  advancedtls.IdentityCertificateOptions{Certificates: []tls.Certificate{clientTLSCert}},
+	clientCreds := credentials.NewTLS(&tls.Config{
+		Certificates: []tls.Certificate{clientTLSCert},
+		RootCAs:      vendorPool,
+		MinVersion:   tls.VersionTLS13,
+		MaxVersion:   tls.VersionTLS13,
 	})
-	if err != nil {
-		t.Fatalf("failed to create client creds: %v", err)
-	}
 
 	conn, err := grpc.NewClient(lis.Addr().String(), grpc.WithTransportCredentials(clientCreds))
 	if err != nil {

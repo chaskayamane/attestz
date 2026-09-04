@@ -36,7 +36,6 @@ import (
 	log "github.com/golang/glog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/security/advancedtls"
 
 	cpb "github.com/openconfig/attestz/proto/common_definitions"
 	epb "github.com/openconfig/attestz/proto/tpm_enrollz"
@@ -412,11 +411,11 @@ func main() {
 	if *insecureConn {
 		log.Warning("Running Device Emulator in insecure (plaintext) mode")
 	} else {
-		advOptions := &advancedtls.Options{
-			IdentityOptions:   advancedtls.IdentityCertificateOptions{Certificates: []tls.Certificate{server.TLSCertificate()}},
-			RequireClientCert: true,
-			MinTLSVersion:     tls.VersionTLS13,
-			MaxTLSVersion:     tls.VersionTLS13,
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{server.TLSCertificate()},
+			ClientAuth:   tls.RequireAnyClientCert,
+			MinVersion:   tls.VersionTLS13,
+			MaxVersion:   tls.VersionTLS13,
 		}
 		if *ownerCACertFile != "" {
 			ownerCAData, err := os.ReadFile(*ownerCACertFile)
@@ -427,19 +426,10 @@ func main() {
 			if !ownerPool.AppendCertsFromPEM(ownerCAData) {
 				log.Exitf("Failed to parse owner CA cert from %s", *ownerCACertFile)
 			}
-			advOptions.VerificationType = advancedtls.CertVerification
-			advOptions.RootOptions = advancedtls.RootCertificateOptions{RootCertificates: ownerPool}
-		} else {
-			advOptions.VerificationType = advancedtls.SkipVerification
-			advOptions.AdditionalPeerVerification = func(params *advancedtls.HandshakeVerificationInfo) (*advancedtls.PostHandshakeVerificationResults, error) {
-				return &advancedtls.PostHandshakeVerificationResults{}, nil
-			}
+			tlsConfig.ClientCAs = ownerPool
+			tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 		}
-		var err error
-		serverCreds, err = advancedtls.NewServerCreds(advOptions)
-		if err != nil {
-			log.Exitf("Failed to create advancedtls server credentials: %v", err)
-		}
+		serverCreds = credentials.NewTLS(tlsConfig)
 	}
 
 	var grpcServer *grpc.Server

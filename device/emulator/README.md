@@ -24,13 +24,27 @@ bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/
 
 ## End-to-End Example with Enrollz Service Emulator
 
-1. Start the device emulator and export its vendor CA certificate:
+1. Generate a test switch owner CA certificate and private key (used by `enrollz_emulator`):
+
+   ```bash
+   openssl ecparam -name secp384r1 -genkey -noout -out /tmp/owner_ca_key.pem
+   openssl req -new -x509 -key /tmp/owner_ca_key.pem -out /tmp/owner_ca_cert.pem -days 365 -subj "/O=Switch Owner/CN=Switch Owner Root CA"
+   ```
+
+2. Start the device emulator and export its vendor CA certificate:
 
    ```bash
    bazel run //device/emulator:device_emulator -- --alsologtostderr --ca_cert_out=/tmp/vendor_ca.pem
    ```
 
-2. In another terminal, run the switch owner Enrollz service emulator:
+   To enforce client certificate verification against the owner CA, pass `--owner_ca_cert=/tmp/owner_ca_cert.pem`.
+
+3. In another terminal, run the switch owner Enrollz service emulator:
+
    ```bash
-   bazel run //service/emulator:enrollz_emulator -- --alsologtostderr --vendor_ca_trust_bundle=/tmp/vendor_ca.pem
+   bazel run //service/emulator:enrollz_emulator -- \
+     --alsologtostderr \
+     --vendor_ca_trust_bundle=/tmp/vendor_ca.pem \
+     --owner_ca_cert=/tmp/owner_ca_cert.pem \
+     --owner_ca_key=/tmp/owner_ca_key.pem
    ```
