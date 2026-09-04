@@ -245,8 +245,8 @@ type EnrollControlCardReq struct {
 	SSLProfileID string
 	// Experimental flag used for lab testing only. Skips oIDevID rotation.
 	SkipOidevidRotate bool
-	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
-	VerifySerialNumberInCert bool
+	// SkipSerialNumberInCert specifies whether to skip verification of serial numbers in certs.
+	SkipSerialNumberInCert bool
 }
 
 // validateEnrollControlCardReq verifies that EnrollControlCardReq request is valid.
@@ -290,7 +290,7 @@ func EnrollControlCard(ctx context.Context, req *EnrollControlCardReq) error {
 	var cardDataList []ControlCardCertData
 	var getIakCertRespList []*epb.GetIakCertResponse
 	for _, selection := range req.ControlCardSelections {
-		cardData, getIakCertResp, err := verifyIdentityWithVendorCerts(ctx, selection, req.Deps, req.CertVerificationOpts, true, req.VerifySerialNumberInCert)
+		cardData, getIakCertResp, err := verifyIdentityWithVendorCerts(ctx, selection, req.Deps, req.CertVerificationOpts, true, req.SkipSerialNumberInCert)
 		if err != nil {
 			err = fmt.Errorf("%w for control card %s: %w", ErrVerifyIdentity, prototext.Format(selection), err)
 			log.ErrorContext(ctx, err)
@@ -329,7 +329,7 @@ type ControlCardCertData struct {
 // It calls the device's GetIakCert method, validates the received IAK and optionally IDevID certificates,
 // and verifies the nonce signature if provided. It returns the verified control card certificate
 // data and the GetIakCertResponse from the device.
-func verifyIdentityWithVendorCerts(ctx context.Context, controlCardSelection *cpb.ControlCardSelection, deps EnrollzInfraDeps, certVerificationOpts x509.VerifyOptions, verifyIDevID bool, verifySerialNumberInCert bool) (*ControlCardCertData, *epb.GetIakCertResponse, error) {
+func verifyIdentityWithVendorCerts(ctx context.Context, controlCardSelection *cpb.ControlCardSelection, deps EnrollzInfraDeps, certVerificationOpts x509.VerifyOptions, verifyIDevID bool, skipSerialNumberInCert bool) (*ControlCardCertData, *epb.GetIakCertResponse, error) {
 	getIakCertReq := &epb.GetIakCertRequest{ControlCardSelection: controlCardSelection}
 	getIakCertResp, err := deps.GetIakCert(ctx, getIakCertReq)
 	if err != nil {
@@ -342,11 +342,11 @@ func verifyIdentityWithVendorCerts(ctx context.Context, controlCardSelection *cp
 	var iakPubPem, idevidPubPem string
 	if verifyIDevID {
 		tpmCertVerifierReq := &VerifyIakAndIDevIDCertsReq{
-			ControlCardID:            getIakCertResp.ControlCardId,
-			IakCertPem:               getIakCertResp.IakCert,
-			IDevIDCertPem:            getIakCertResp.IdevidCert,
-			CertVerificationOpts:     certVerificationOpts,
-			VerifySerialNumberInCert: verifySerialNumberInCert,
+			ControlCardID:          getIakCertResp.ControlCardId,
+			IakCertPem:             getIakCertResp.IakCert,
+			IDevIDCertPem:          getIakCertResp.IdevidCert,
+			CertVerificationOpts:   certVerificationOpts,
+			SkipSerialNumberInCert: skipSerialNumberInCert,
 		}
 		tpmCertVerifierResp, err := deps.VerifyIakAndIDevIDCerts(ctx, tpmCertVerifierReq)
 		if err != nil {
@@ -358,10 +358,10 @@ func verifyIdentityWithVendorCerts(ctx context.Context, controlCardSelection *cp
 			prototext.Format(getIakCertResp.ControlCardId), tpmCertVerifierResp.IakPubPem, tpmCertVerifierResp.IDevIDPubPem)
 	} else {
 		tpmCertVerifierReq := &VerifyTpmCertReq{
-			ControlCardID:            getIakCertResp.ControlCardId,
-			CertPem:                  getIakCertResp.IakCert,
-			CertVerificationOpts:     certVerificationOpts,
-			VerifySerialNumberInCert: verifySerialNumberInCert,
+			ControlCardID:          getIakCertResp.ControlCardId,
+			CertPem:                getIakCertResp.IakCert,
+			CertVerificationOpts:   certVerificationOpts,
+			SkipSerialNumberInCert: skipSerialNumberInCert,
 		}
 		tpmCertVerifierResp, err := deps.VerifyTpmCert(ctx, tpmCertVerifierReq)
 		if err != nil {
@@ -520,8 +520,8 @@ type RotateOwnerIakCertReq struct {
 	SSLProfileID string
 	// Flag used to enable oIDevID rotation.
 	EnableOidevidRotate bool
-	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
-	VerifySerialNumberInCert bool
+	// SkipSerialNumberInCert specifies whether to skip verification of serial numbers in certs.
+	SkipSerialNumberInCert bool
 }
 
 // validateRotateOwnerIakCert verifies that RotateOwnerIakCertReq request is valid.
@@ -566,7 +566,7 @@ func RotateOwnerIakCert(ctx context.Context, req *RotateOwnerIakCertReq) error {
 	var cardDataList []ControlCardCertData
 	var getIakCertRespList []*epb.GetIakCertResponse
 	for _, selection := range req.ControlCardSelections {
-		cardData, getIakCertResp, err := verifyIdentityWithVendorCerts(ctx, selection, req.Deps, req.CertVerificationOpts, req.EnableOidevidRotate, req.VerifySerialNumberInCert)
+		cardData, getIakCertResp, err := verifyIdentityWithVendorCerts(ctx, selection, req.Deps, req.CertVerificationOpts, req.EnableOidevidRotate, req.SkipSerialNumberInCert)
 		if err != nil {
 			err = fmt.Errorf("%w for control card %s: %w", ErrVerifyIdentity, prototext.Format(selection), err)
 			log.ErrorContext(ctx, err)

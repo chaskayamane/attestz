@@ -37,8 +37,8 @@ type VerifyIakAndIDevIDCertsReq struct {
 	IakCertPem string
 	// PEM-encoded IDevID x509 TLS cert.
 	IDevIDCertPem string
-	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
-	VerifySerialNumberInCert bool
+	// SkipSerialNumberInCert specifies whether to skip verification of serial numbers in certs.
+	SkipSerialNumberInCert bool
 }
 
 // VerifyIakAndIDevIDCertsResp is the response from VerifyIakAndIDevIDCerts().
@@ -57,8 +57,8 @@ type VerifyTpmCertReq struct {
 	CertVerificationOpts x509.VerifyOptions
 	// PEM-encoded x509 attestation IAK or TLS IDevID cert.
 	CertPem string
-	// VerifySerialNumberInCert specifies whether to verify serial numbers in certs.
-	VerifySerialNumberInCert bool
+	// SkipSerialNumberInCert specifies whether to skip verification of serial numbers in certs.
+	SkipSerialNumberInCert bool
 }
 
 // VerifyTpmCertResp is the response from VerifyTpmCert().
@@ -127,7 +127,7 @@ func (tcv *DefaultTpmCertVerifier) VerifyIakAndIDevIDCerts(ctx context.Context, 
 	log.InfoContext(ctx, "Successfully verified and parsed IAK cert")
 
 	var iakSerialNumber string
-	if req.VerifySerialNumberInCert {
+	if !req.SkipSerialNumberInCert {
 		// Verify IAK cert subject serial and expected control card serial numbers match.
 		var err error
 		iakSerialNumber, err = getCertSerialNumber(iakX509.Subject.SerialNumber)
@@ -172,7 +172,7 @@ func (tcv *DefaultTpmCertVerifier) VerifyIakAndIDevIDCerts(ctx context.Context, 
 	}
 	log.InfoContext(ctx, "Successfully verified and parsed IDevID cert")
 
-	if req.VerifySerialNumberInCert {
+	if !req.SkipSerialNumberInCert {
 		// Verify IAK and IDevID cert subject serials match.
 		iDevIDSerialNumber, err := getCertSerialNumber(iDevIDX509.Subject.SerialNumber)
 		if err != nil {
@@ -232,7 +232,7 @@ func (tcv *DefaultTpmCertVerifier) VerifyTpmCert(ctx context.Context, req *Verif
 	}
 	log.InfoContext(ctx, "Successfully verified and parsed PEM cert into x509 structure")
 
-	if req.VerifySerialNumberInCert {
+	if !req.SkipSerialNumberInCert {
 		// Verify cert subject serial and expected control card serial numbers match.
 		certSerialNumber, err := getCertSerialNumber(certX509.Subject.SerialNumber)
 		if err != nil {

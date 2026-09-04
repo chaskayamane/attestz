@@ -329,8 +329,8 @@ func main() {
 		},
 		Deps:                     deps,
 		CertVerificationOpts:     x509.VerifyOptions{Roots: caPool},
-		SSLProfileID:             "tls",
-		VerifySerialNumberInCert: false,
+		SSLProfileID:           "tls",
+		SkipSerialNumberInCert: true,
 	}
 
 	ctx := context.Background()

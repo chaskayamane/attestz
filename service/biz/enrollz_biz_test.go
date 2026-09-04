@@ -215,7 +215,7 @@ func TestEnrollControlCard(t *testing.T) {
 		getIakCertResps              []*epb.GetIakCertResponse
 		rotateOIakCertResps          []*epb.RotateOIakCertResponse
 		verifyIakAndIDevIDCertsResps []*VerifyIakAndIDevIDCertsResp
-		verifySerialNumberInCert     bool
+		skipSerialNumberInCert       bool
 	}{
 		{
 			desc:                  "Successful control card enrollment (single)",
@@ -649,9 +649,9 @@ func TestEnrollControlCard(t *testing.T) {
 			},
 		},
 		{
-			desc:                     "Successful control card enrollment with serial number verification in cert",
-			controlCardSelections:    []*cpb.ControlCardSelection{controlCardSelection1},
-			verifySerialNumberInCert: true,
+			desc:                   "Successful control card enrollment with serial number verification in cert (SkipSerialNumberInCert is false)",
+			controlCardSelections:  []*cpb.ControlCardSelection{controlCardSelection1},
+			skipSerialNumberInCert: false,
 			getIakCertResps: []*epb.GetIakCertResponse{{
 				ControlCardId:               vendorID1,
 				IakCert:                     iakCert1,
@@ -668,11 +668,54 @@ func TestEnrollControlCard(t *testing.T) {
 
 			wantGetIakCertReqs: []*epb.GetIakCertRequest{{ControlCardSelection: controlCardSelection1}},
 			wantVerifyIakAndIDevIDCertsReqs: []*VerifyIakAndIDevIDCertsReq{{
-				ControlCardID:            vendorID1,
-				IakCertPem:               iakCert1,
-				IDevIDCertPem:            iDevIDCert1,
-				CertVerificationOpts:     certVerificationOpts,
-				VerifySerialNumberInCert: true,
+				ControlCardID:          vendorID1,
+				IakCertPem:             iakCert1,
+				IDevIDCertPem:          iDevIDCert1,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: false,
+			}},
+			wantIssueOwnerIakCertReqs: []*IssueOwnerIakCertReq{{
+				CardID:    vendorID1,
+				IakPubPem: iakPub1,
+			}},
+			wantIssueOwnerIDevIDCertReqs: []*IssueOwnerIDevIDCertReq{{
+				CardID:       vendorID1,
+				IDevIDPubPem: iDevIDPub1,
+			}},
+			wantRotateOIakCertReqs: []*epb.RotateOIakCertRequest{{
+				SslProfileId: sslProfileID,
+				Updates: []*epb.ControlCardCertUpdate{{
+					ControlCardSelection: controlCardSelection1,
+					OiakCert:             oIakCert1,
+					OidevidCert:          oIdevIDCert1,
+				}},
+			}},
+		},
+		{
+			desc:                   "Successful control card enrollment without serial number verification in cert (SkipSerialNumberInCert is true)",
+			controlCardSelections:  []*cpb.ControlCardSelection{controlCardSelection1},
+			skipSerialNumberInCert: true,
+			getIakCertResps: []*epb.GetIakCertResponse{{
+				ControlCardId:               vendorID1,
+				IakCert:                     iakCert1,
+				IdevidCert:                  iDevIDCert1,
+				AtomicCertRotationSupported: true,
+			}},
+			verifyIakAndIDevIDCertsResps: []*VerifyIakAndIDevIDCertsResp{{
+				IakPubPem:    iakPub1,
+				IDevIDPubPem: iDevIDPub1,
+			}},
+			issueOwnerIakCertResps:    []*IssueOwnerIakCertResp{{OwnerIakCertPem: oIakCert1}},
+			issueOwnerIDevIDCertResps: []*IssueOwnerIDevIDCertResp{{OwnerIDevIDCertPem: oIdevIDCert1}},
+			rotateOIakCertResps:       []*epb.RotateOIakCertResponse{{}},
+
+			wantGetIakCertReqs: []*epb.GetIakCertRequest{{ControlCardSelection: controlCardSelection1}},
+			wantVerifyIakAndIDevIDCertsReqs: []*VerifyIakAndIDevIDCertsReq{{
+				ControlCardID:          vendorID1,
+				IakCertPem:             iakCert1,
+				IDevIDCertPem:          iDevIDCert1,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: true,
 			}},
 			wantIssueOwnerIakCertReqs: []*IssueOwnerIakCertReq{{
 				CardID:    vendorID1,
@@ -704,11 +747,11 @@ func TestEnrollControlCard(t *testing.T) {
 				errorResp:                    test.wantErrResp,
 			}
 			req := &EnrollControlCardReq{
-				ControlCardSelections:    test.controlCardSelections,
-				CertVerificationOpts:     certVerificationOpts,
-				Deps:                     stub,
-				SSLProfileID:             sslProfileID,
-				VerifySerialNumberInCert: test.verifySerialNumberInCert,
+				ControlCardSelections:  test.controlCardSelections,
+				CertVerificationOpts:   certVerificationOpts,
+				Deps:                   stub,
+				SSLProfileID:           sslProfileID,
+				SkipSerialNumberInCert: test.skipSerialNumberInCert,
 			}
 			ctx := context.Background()
 			got := EnrollControlCard(ctx, req)
@@ -808,7 +851,7 @@ func TestRotateOwnerIakCert(t *testing.T) {
 		issueOwnerIDevIDCertResps    []*IssueOwnerIDevIDCertResp
 		enableOidevidRotate          bool
 		sslProfileID                 string
-		verifySerialNumberInCert     bool
+		skipSerialNumberInCert       bool
 	}{
 		{
 			desc:                  "Successful rotation of Owner IAK cert (single)",
@@ -1139,9 +1182,9 @@ func TestRotateOwnerIakCert(t *testing.T) {
 			}},
 		},
 		{
-			desc:                     "Successful rotation of Owner IAK cert with serial number verification in cert",
-			controlCardSelections:    []*cpb.ControlCardSelection{controlCardSelection1},
-			verifySerialNumberInCert: true,
+			desc:                   "Successful rotation of Owner IAK cert with serial number verification in cert (SkipSerialNumberInCert is false)",
+			controlCardSelections:  []*cpb.ControlCardSelection{controlCardSelection1},
+			skipSerialNumberInCert: false,
 			getIakCertResps: []*epb.GetIakCertResponse{{
 				ControlCardId:               vendorID1,
 				IakCert:                     iakCert1,
@@ -1155,10 +1198,44 @@ func TestRotateOwnerIakCert(t *testing.T) {
 
 			wantGetIakCertReqs: []*epb.GetIakCertRequest{{ControlCardSelection: controlCardSelection1}},
 			wantVerifyTpmCertReqs: []*VerifyTpmCertReq{{
-				ControlCardID:            vendorID1,
-				CertPem:                  iakCert1,
-				CertVerificationOpts:     certVerificationOpts,
-				VerifySerialNumberInCert: true,
+				ControlCardID:          vendorID1,
+				CertPem:                iakCert1,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: false,
+			}},
+			wantIssueOwnerIakCertReqs: []*IssueOwnerIakCertReq{{
+				CardID:    vendorID1,
+				IakPubPem: iakPub1,
+			}},
+			wantRotateOIakCertReqs: []*epb.RotateOIakCertRequest{{
+				SslProfileId: "",
+				Updates: []*epb.ControlCardCertUpdate{{
+					ControlCardSelection: controlCardSelection1,
+					OiakCert:             oIakCert1,
+				}},
+			}},
+		},
+		{
+			desc:                   "Successful rotation of Owner IAK cert without serial number verification in cert (SkipSerialNumberInCert is true)",
+			controlCardSelections:  []*cpb.ControlCardSelection{controlCardSelection1},
+			skipSerialNumberInCert: true,
+			getIakCertResps: []*epb.GetIakCertResponse{{
+				ControlCardId:               vendorID1,
+				IakCert:                     iakCert1,
+				AtomicCertRotationSupported: true,
+			}},
+			verifyTpmCertResps: []*VerifyTpmCertResp{{
+				PubPem: iakPub1,
+			}},
+			issueOwnerIakCertResps: []*IssueOwnerIakCertResp{{OwnerIakCertPem: oIakCert1}},
+			rotateOIakCertResps:    []*epb.RotateOIakCertResponse{{}},
+
+			wantGetIakCertReqs: []*epb.GetIakCertRequest{{ControlCardSelection: controlCardSelection1}},
+			wantVerifyTpmCertReqs: []*VerifyTpmCertReq{{
+				ControlCardID:          vendorID1,
+				CertPem:                iakCert1,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: true,
 			}},
 			wantIssueOwnerIakCertReqs: []*IssueOwnerIakCertReq{{
 				CardID:    vendorID1,
@@ -1186,12 +1263,12 @@ func TestRotateOwnerIakCert(t *testing.T) {
 				errorResp:                    test.wantErrResp,
 			}
 			req := &RotateOwnerIakCertReq{
-				ControlCardSelections:    test.controlCardSelections,
-				CertVerificationOpts:     certVerificationOpts,
-				Deps:                     stub,
-				EnableOidevidRotate:      test.enableOidevidRotate,
-				SSLProfileID:             test.sslProfileID,
-				VerifySerialNumberInCert: test.verifySerialNumberInCert,
+				ControlCardSelections:  test.controlCardSelections,
+				CertVerificationOpts:   certVerificationOpts,
+				Deps:                   stub,
+				EnableOidevidRotate:    test.enableOidevidRotate,
+				SSLProfileID:           test.sslProfileID,
+				SkipSerialNumberInCert: test.skipSerialNumberInCert,
 			}
 			ctx := context.Background()
 			got := RotateOwnerIakCert(ctx, req)
@@ -3232,7 +3309,7 @@ func TestVerifyIdentityWithVendorCerts(t *testing.T) {
 		// Test description.
 		desc                            string
 		verifyIDevID                    bool
-		verifySerialNumberInCert        bool
+		skipSerialNumberInCert          bool
 		mockStub                        stubEnrollzInfraDeps
 		wantErr                         error
 		wantIakPub                      string
@@ -3241,26 +3318,9 @@ func TestVerifyIdentityWithVendorCerts(t *testing.T) {
 		wantVerifyTpmCertReqs           []*VerifyTpmCertReq
 	}{
 		{
-			desc:         "Success with IDevID verification",
-			verifyIDevID: true,
-			mockStub: stubEnrollzInfraDeps{
-				getIakCertResps: []*epb.GetIakCertResponse{{
-					ControlCardId: vendorID,
-					IakCert:       iakCert,
-					IdevidCert:    idevidCert,
-				}},
-				verifyIakAndIDevIDCertsResps: []*VerifyIakAndIDevIDCertsResp{{
-					IakPubPem:    iakPub,
-					IDevIDPubPem: idevidPub,
-				}},
-			},
-			wantIakPub:    iakPub,
-			wantIDevIDPub: idevidPub,
-		},
-		{
-			desc:                     "Success with IDevID verification and VerifySerialNumberInCert",
-			verifyIDevID:             true,
-			verifySerialNumberInCert: true,
+			desc:                   "Success with IDevID verification and SkipSerialNumberInCert is false",
+			verifyIDevID:           true,
+			skipSerialNumberInCert: false,
 			mockStub: stubEnrollzInfraDeps{
 				getIakCertResps: []*epb.GetIakCertResponse{{
 					ControlCardId: vendorID,
@@ -3275,31 +3335,42 @@ func TestVerifyIdentityWithVendorCerts(t *testing.T) {
 			wantIakPub:    iakPub,
 			wantIDevIDPub: idevidPub,
 			wantVerifyIakAndIDevIDCertsReqs: []*VerifyIakAndIDevIDCertsReq{{
-				ControlCardID:            vendorID,
-				IakCertPem:               iakCert,
-				IDevIDCertPem:            idevidCert,
-				CertVerificationOpts:     certVerificationOpts,
-				VerifySerialNumberInCert: true,
+				ControlCardID:          vendorID,
+				IakCertPem:             iakCert,
+				IDevIDCertPem:          idevidCert,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: false,
 			}},
 		},
 		{
-			desc:         "Success without IDevID verification",
-			verifyIDevID: false,
+			desc:                   "Success with IDevID verification and SkipSerialNumberInCert is true",
+			verifyIDevID:           true,
+			skipSerialNumberInCert: true,
 			mockStub: stubEnrollzInfraDeps{
 				getIakCertResps: []*epb.GetIakCertResponse{{
 					ControlCardId: vendorID,
 					IakCert:       iakCert,
+					IdevidCert:    idevidCert,
 				}},
-				verifyTpmCertResps: []*VerifyTpmCertResp{{
-					PubPem: iakPub,
+				verifyIakAndIDevIDCertsResps: []*VerifyIakAndIDevIDCertsResp{{
+					IakPubPem:    iakPub,
+					IDevIDPubPem: idevidPub,
 				}},
 			},
-			wantIakPub: iakPub,
+			wantIakPub:    iakPub,
+			wantIDevIDPub: idevidPub,
+			wantVerifyIakAndIDevIDCertsReqs: []*VerifyIakAndIDevIDCertsReq{{
+				ControlCardID:          vendorID,
+				IakCertPem:             iakCert,
+				IDevIDCertPem:          idevidCert,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: true,
+			}},
 		},
 		{
-			desc:                     "Success without IDevID verification and VerifySerialNumberInCert",
-			verifyIDevID:             false,
-			verifySerialNumberInCert: true,
+			desc:                   "Success without IDevID verification and SkipSerialNumberInCert is false",
+			verifyIDevID:           false,
+			skipSerialNumberInCert: false,
 			mockStub: stubEnrollzInfraDeps{
 				getIakCertResps: []*epb.GetIakCertResponse{{
 					ControlCardId: vendorID,
@@ -3311,10 +3382,31 @@ func TestVerifyIdentityWithVendorCerts(t *testing.T) {
 			},
 			wantIakPub: iakPub,
 			wantVerifyTpmCertReqs: []*VerifyTpmCertReq{{
-				ControlCardID:            vendorID,
-				CertPem:                  iakCert,
-				CertVerificationOpts:     certVerificationOpts,
-				VerifySerialNumberInCert: true,
+				ControlCardID:          vendorID,
+				CertPem:                iakCert,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: false,
+			}},
+		},
+		{
+			desc:                   "Success without IDevID verification and SkipSerialNumberInCert is true",
+			verifyIDevID:           false,
+			skipSerialNumberInCert: true,
+			mockStub: stubEnrollzInfraDeps{
+				getIakCertResps: []*epb.GetIakCertResponse{{
+					ControlCardId: vendorID,
+					IakCert:       iakCert,
+				}},
+				verifyTpmCertResps: []*VerifyTpmCertResp{{
+					PubPem: iakPub,
+				}},
+			},
+			wantIakPub: iakPub,
+			wantVerifyTpmCertReqs: []*VerifyTpmCertReq{{
+				ControlCardID:          vendorID,
+				CertPem:                iakCert,
+				CertVerificationOpts:   certVerificationOpts,
+				SkipSerialNumberInCert: true,
 			}},
 		},
 		{
@@ -3356,7 +3448,7 @@ func TestVerifyIdentityWithVendorCerts(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			stub := &test.mockStub
 			ctx := context.Background()
-			cardData, resp, err := verifyIdentityWithVendorCerts(ctx, controlCardSelection, stub, certVerificationOpts, test.verifyIDevID, test.verifySerialNumberInCert)
+			cardData, resp, err := verifyIdentityWithVendorCerts(ctx, controlCardSelection, stub, certVerificationOpts, test.verifyIDevID, test.skipSerialNumberInCert)
 
 			if test.wantErr != nil {
 				if !errors.Is(err, test.wantErr) {
